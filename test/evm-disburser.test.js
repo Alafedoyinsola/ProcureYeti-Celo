@@ -1165,4 +1165,111 @@ test('Live Local EVM - Complete Pre-Deployment Verification of ProcureYeti Senti
     assert.ok(totalMandates > 0n, 'Mandates recorded in mandateCount');
     assert.ok(totalExecutedMandates > 0n, 'Executed mandates recorded in executedMandateCount');
   });
+
+  // REQUIREMENT 19: Autonomous Payment Path & Session Scope Security Invariants
+  await t.test('19. Autonomous Payment Path & Least Privilege Invariants', async () => {
+    // 19A: Agent attempting autonomous payment under $500 without a mandate reverts with MandateNotFound
+    const unmandatedId = helperDeriveMandateId('PR-NO-MANDATE-AUTO', accounts.supplierA.address);
+    await assert.rejects(
+      async () => {
+        await agentWallet.writeContract({
+          address: disburserAddress,
+          abi: disburserArtifact.abi,
+          functionName: 'disburseWithMandate',
+          args: [unmandatedId, accounts.supplierA.address, parseUnits('180', 6), 'PR-NO-MANDATE-AUTO'],
+        });
+      },
+      (err) => err.message.includes('MandateNotFound') || err.message.includes('revert'),
+      'Agent cannot disburse autonomous payment without an owner-created mandate'
+    );
+
+    // 19B: Stranger attempting disburseWithMandate reverts with Unauthorized
+    await assert.rejects(
+      async () => {
+        await strangerWallet.writeContract({
+          address: disburserAddress,
+          abi: disburserArtifact.abi,
+          functionName: 'disburseWithMandate',
+          args: [unmandatedId, accounts.supplierA.address, parseUnits('180', 6), 'PR-NO-MANDATE-AUTO'],
+        });
+      },
+      (err) => err.message.includes('Unauthorized') || err.message.includes('revert'),
+      'Unauthorized caller cannot invoke disburseWithMandate'
+    );
+
+    // 19C: Agent attempting owner-only configuration functions reverts with Unauthorized
+    await assert.rejects(
+      async () => {
+        await agentWallet.writeContract({
+          address: disburserAddress,
+          abi: disburserArtifact.abi,
+          functionName: 'setSpendingLimits',
+          args: [parseUnits('3000', 6), parseUnits('6000', 6), parseUnits('600', 6)],
+        });
+      },
+      (err) => err.message.includes('Unauthorized') || err.message.includes('revert'),
+      'Agent cannot modify spending limits'
+    );
+
+    await assert.rejects(
+      async () => {
+        await agentWallet.writeContract({
+          address: disburserAddress,
+          abi: disburserArtifact.abi,
+          functionName: 'setAuthorizedAgent',
+          args: [accounts.unauthorizedCaller.address, true],
+        });
+      },
+      (err) => err.message.includes('Unauthorized') || err.message.includes('revert'),
+      'Agent cannot authorize new agents'
+    );
+
+    // 19D: Permitted autonomous payment (<= $500 with valid owner mandate) succeeds
+    // Advance block timestamp into next UTC calendar day (86,400s) to reset dailySpent capacity
+    await provider.request({ method: 'evm_increaseTime', params: [86400] });
+    await provider.request({ method: 'evm_mine', params: [] });
+
+    const nextBlock = await publicClient.getBlock();
+    const expiry = BigInt(nextBlock.timestamp) + 86400n;
+    const autoMandateId = helperDeriveMandateId('PR-AUTO-PERMITTED-01', accounts.supplierA.address);
+
+    // Owner creates mandate for $180 USDC
+    await (
+      await ownerWallet.writeContract({
+        address: disburserAddress,
+        abi: disburserArtifact.abi,
+        functionName: 'createMandate',
+        args: [autoMandateId, accounts.supplierA.address, parseUnits('180', 6), 'PR-AUTO-PERMITTED-01', expiry],
+      })
+    );
+
+    const supplierABalBefore = await publicClient.readContract({
+      address: usdcAddress,
+      abi: mockUsdcArtifact.abi,
+      functionName: 'balanceOf',
+      args: [accounts.supplierA.address],
+    });
+
+    // Agent executes autonomous payment of $180 USDC (<= $500 autonomous threshold)
+    const autoTx = await agentWallet.writeContract({
+      address: disburserAddress,
+      abi: disburserArtifact.abi,
+      functionName: 'disburseWithMandate',
+      args: [autoMandateId, accounts.supplierA.address, parseUnits('180', 6), 'PR-AUTO-PERMITTED-01'],
+    });
+    const autoReceipt = await publicClient.waitForTransactionReceipt({ hash: autoTx });
+    assert.strictEqual(autoReceipt.status, 'success', 'Permitted autonomous payment by agent succeeds');
+
+    const supplierABalAfter = await publicClient.readContract({
+      address: usdcAddress,
+      abi: mockUsdcArtifact.abi,
+      functionName: 'balanceOf',
+      args: [accounts.supplierA.address],
+    });
+    assert.strictEqual(
+      supplierABalAfter - supplierABalBefore,
+      parseUnits('180', 6),
+      'Supplier received exact $180 USDC from autonomous payment'
+    );
+  });
 });

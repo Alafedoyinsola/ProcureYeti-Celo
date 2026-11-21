@@ -375,6 +375,21 @@ test('ProcureYetiDisburser - Altana Disburser Session Permissions Structure and 
     'Agent session MUST NOT have permission to call USDC.transfer directly'
   );
 
+  // Verify unauthorized functions are strictly excluded from session call permissions
+  const unauthorizedSignatures = [
+    'transfer(address,uint256)',
+    'disbursePayment(address,uint256,string)',
+    'createMandate(bytes32,address,uint256,string,uint256)',
+    'revokeMandate(bytes32)',
+    'setSpendingLimits(uint256,uint256,uint256)',
+    'setAuthorizedAgent(address,bool)',
+    'approveSupplier(address,string)',
+  ];
+  for (const sig of unauthorizedSignatures) {
+    const isPermitted = permissions.calls.some((c) => c.signature === sig);
+    assert.strictEqual(isPermitted, false, `Session must not permit unauthorized function: ${sig}`);
+  }
+
   // Verify that native gas fee headroom is present to prevent NoSpendPermissions on relay submission
   const nativeGasPermission = permissions.spend.find((s) => !s.token);
   assert.ok(nativeGasPermission, 'Native gas fee headroom must be present in session permissions');
