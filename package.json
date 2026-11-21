@@ -6,12 +6,17 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --test test/disburser.test.js test/evm-disburser.test.js",
+    "prepare:disburser": "node scripts/deploy-disburser.js"
   },
   "dependencies": {
+    "@altananetwork/sdk": "^1.1.0",
+    "lucide-react": "^1.77.0",
     "next": "16.4.6",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "viem": "^2.58.2"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "4.3.3",
@@ -20,6 +25,8 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
+    "ganache": "^7.9.2",
+    "solc": "^0.8.28",
     "tailwindcss": "4.3.3",
     "typescript": "^5"
   }
