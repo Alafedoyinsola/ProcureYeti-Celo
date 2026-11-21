@@ -46,6 +46,9 @@ import {
   INITIAL_ACTIVITY,
 } from '@/lib/mockData';
 
+import { AuditableDecisionReceipt } from '@/lib/sentinel/investigation';
+import type { Address } from 'viem';
+
 export default function Home() {
   const [currentTab, setCurrentTab] = useState<NavTab>('overview');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -244,6 +247,102 @@ export default function Home() {
     setActivity([newActivity, ...activity]);
   };
 
+  // Handler: Commit Mandate Decision from Sentinel Modal
+  const handleCommitMandateDecision = (
+    receipt: AuditableDecisionReceipt,
+    mandateData?: {
+      mandateId: `0x${string}`;
+      maxAmount: number;
+      expiry: string;
+      supplierAddress: Address;
+    }
+  ) => {
+    if (receipt.action === 'approve_and_generate_mandate' && mandateData) {
+      setRequests((prev) =>
+        prev.map((r) =>
+          r.id === receipt.requisitionId
+            ? {
+                ...r,
+                status: 'awaiting_execution',
+                mandateId: mandateData.mandateId,
+                mandateStatus: 'prepared',
+                mandateMaxAmount: mandateData.maxAmount,
+                mandateExpiry: mandateData.expiry,
+                demoRef: receipt.receiptId,
+              }
+            : r
+        )
+      );
+
+      setApprovals((prev) =>
+        prev.map((a) =>
+          a.requestId === receipt.requisitionId
+            ? {
+                ...a,
+                status: 'awaiting_execution',
+                mandateId: mandateData.mandateId,
+                mandateStatus: 'prepared',
+                mandateMaxAmount: mandateData.maxAmount,
+                mandateExpiry: mandateData.expiry,
+                receiptId: receipt.receiptId,
+              }
+            : a
+        )
+      );
+
+      setActivity((prev) => [
+        {
+          id: `ACT-MANDATE-${prev.length + 1}`,
+          timestamp: 'Just now',
+          type: 'owner_approval',
+          actor: 'Elena Vance (Owner)',
+          title: `Purchase Mandate Prepared (Demo): ${mandateData.mandateId.slice(0, 10)}...`,
+          description: `Owner recorded approval and prepared Purchase Mandate calldata for requisition ${receipt.requisitionId} (Max $${mandateData.maxAmount.toLocaleString()} USDC). Prepared calldata awaiting on-chain broadcast. Receipt: ${receipt.receiptId}.`,
+          amount: mandateData.maxAmount,
+          currency: 'USDC',
+          demoRef: receipt.receiptId,
+          badge: 'Mandate Prepared (Local)',
+        },
+        ...prev,
+      ]);
+    } else if (receipt.action === 'reject') {
+      handleRejectApproval(receipt.requisitionId);
+    } else if (receipt.action === 'request_clarification') {
+      setRequests((prev) =>
+        prev.map((r) =>
+          r.id === receipt.requisitionId
+            ? { ...r, status: 'pending_approval' }
+            : r
+        )
+      );
+      setActivity((prev) => [
+        {
+          id: `ACT-CLARIFY-${prev.length + 1}`,
+          timestamp: 'Just now',
+          type: 'policy_guardrail',
+          actor: 'Elena Vance (Owner)',
+          title: `Clarification Requested: ${receipt.requisitionId}`,
+          description: `Owner requested additional documentation: "${receipt.clarificationNote || 'Vendor quote and justification breakdown needed'}". No payment authority granted.`,
+          badge: 'Clarification Needed',
+        },
+        ...prev,
+      ]);
+    } else if (receipt.action === 'escalate_to_multisig') {
+      setActivity((prev) => [
+        {
+          id: `ACT-ESCALATE-${prev.length + 1}`,
+          timestamp: 'Just now',
+          type: 'policy_guardrail',
+          actor: 'Elena Vance (Owner)',
+          title: `Requisition Escalated to Multi-Sig: ${receipt.requisitionId}`,
+          description: `Escalated for senior executive sign-off due to policy threshold or contract ceiling trigger. No payment authority granted.`,
+          badge: 'Escalated',
+        },
+        ...prev,
+      ]);
+    }
+  };
+
   // Handler: Reject Approval
   const handleRejectApproval = (approvalId: string) => {
     const item = approvals.find((a) => a.id === approvalId);
@@ -388,8 +487,12 @@ export default function Home() {
             {currentTab === 'approvals' && (
               <ApprovalCentreView
                 approvals={approvals}
+                requests={requests}
+                suppliers={suppliers}
+                quotations={quotations}
                 onAuthorize={handleAuthorizeApproval}
                 onReject={handleRejectApproval}
+                onCommitMandateDecision={handleCommitMandateDecision}
               />
             )}
 

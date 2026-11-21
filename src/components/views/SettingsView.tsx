@@ -105,7 +105,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500"
               />
               <span className="text-[10px] text-slate-500 mt-1 block">
-                Maximum 24h simulated disbursement volume across all vendors.
+                Maximum daily (UTC calendar day) simulated disbursement volume across all vendors.
               </span>
             </div>
 

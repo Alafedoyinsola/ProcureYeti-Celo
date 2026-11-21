@@ -206,7 +206,7 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
         <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between text-slate-400 mb-3 text-xs uppercase tracking-wider font-semibold">
-              <span>24h Velocity Allowance</span>
+              <span>Daily Velocity Allowance (UTC)</span>
               <Zap className="w-4 h-4 text-amber-400" />
             </div>
 
@@ -235,7 +235,7 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
           </div>
 
           <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-500">
-            Enforced on-chain by ProcureYetiDisburser router state
+            Enforced on-chain by ProcureYetiDisburser router state (UTC calendar day)
           </div>
         </div>
 
@@ -392,8 +392,8 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
 
         <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 text-[11px] text-slate-400 space-y-1.5">
           <div>
-            <span className="text-emerald-400 font-semibold">On-Chain Whitelist Security Guarantee: </span>
-            Altana Agent session permissions target <code className="text-emerald-300">ProcureYetiDisburser.disbursePayment(address,uint256,string)</code> rather than the raw USDC contract. This cryptographically prevents the agent key from transferring tokens to any unapproved recipient on Celo.
+            <span className="text-emerald-400 font-semibold">On-Chain Mandate Security Guarantee: </span>
+            Altana Agent session permissions target <code className="text-emerald-300">ProcureYetiDisburser.disburseWithMandate(bytes32,address,uint256,string)</code> rather than the raw USDC contract. This cryptographically prevents the agent key from transferring tokens to any unapproved recipient or without an owner-created Purchase Mandate on Celo.
           </div>
           <div className="text-[10px] text-slate-500">
             Note: Address <code>0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B</code> was verified via RPC as a USDC Fee Adapter (0 bytecode on Sepolia) and is strictly excluded from transfer execution.
@@ -488,7 +488,7 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
           <div>
             <h4 className="text-sm font-bold text-white flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>Session Policy Guardrails & KeyStore Rules</span>
+              <span>Session Policy Guardrails &amp; KeyStore Rules</span>
             </h4>
             <p className="text-xs text-slate-400 mt-0.5">
               Parameters mapped directly to Altana SDK `grantSession` permissions
@@ -509,6 +509,52 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
               <span className="font-medium">{policy}</span>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Celo Attribution & Relay Execution Gate Banner */}
+      <div className="p-6 rounded-2xl bg-slate-900 border border-indigo-500/30 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+              <Shield className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>Celo ERC-8021 Hackathon Attribution &amp; Relay Safety Gate</span>
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold">
+                  Execution Gate Engaged
+                </span>
+              </h4>
+              <p className="text-xs text-slate-400">
+                Agents Open for Business &bull; Track 4: Agent Wallets | Altana
+              </p>
+            </div>
+          </div>
+
+          <div className="font-mono text-xs px-3 py-1.5 rounded-xl bg-slate-950 border border-indigo-500/40 text-indigo-300">
+            Tag: celo_43f4a9848a4b
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            <span className="font-bold text-amber-400 text-xs">Technical Architectural Incompatibility:</span>
+            <p className="text-slate-300 text-[11px] leading-relaxed">
+              Altana SDK v1.1.0 relays transactions via Ithaca Porto EIP-7702 delegated call envelopes. Celo&apos;s official
+              attribution verifier (<code>@celo/attribution-tags</code>) inspects the outermost transaction envelope calldata.
+              Appending attribution tags to inner calldata does not survive the Porto relayer envelope.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            <span className="font-bold text-emerald-400 text-xs">Protective Sentinel Policy:</span>
+            <p className="text-slate-300 text-[11px] leading-relaxed">
+              To prevent spending hackathon treasury funds on uncredited mainnet transactions, live transaction relay is
+              systematically gated. Purchase mandates and execution plans are fully prepared and cryptographically signed with
+              auditable receipts.
+            </p>
+          </div>
         </div>
       </div>
     </div>

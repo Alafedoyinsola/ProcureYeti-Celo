@@ -31,7 +31,7 @@ export interface ProcurementSessionParams {
    * NOT the contract receiving the message call!
    */
   allowedVendorAddresses: Address[];
-  /** Spending limit over the rolling period (e.g. 500 for $500 limit) */
+  /** Spending limit over the daily period (e.g. 500 for $500 limit) */
   dailySpendingLimit?: number;
   /** Backwards compatibility alias for dailySpendingLimit */
   dailySpendingLimitCUSD?: number;
@@ -76,23 +76,45 @@ export function resolveTokenConfig(token?: TokenConfig, tokenAddress?: Address):
  *    - The session call rule therefore targets `to: token.address` with `signature: 'transfer(address,uint256)'`.
  *    - Vendor destinations are enforced before execution by ProcureYeti policy verification.
  *
- * 2. Rolling Spend Limits:
+ * 2. Daily Spend Limits:
  *    - Velocity cap specified in smallest raw integer units (`bigint`) using verified decimals
  *      (e.g., 6 decimals for USDC: $500 -> 500,000,000 raw units).
  *
  * 3. Expiry:
  *    - UNIX timestamp boundary enforced on-chain by Altana KeyStore.
  */
+import {
+  buildDisburserSessionPermissions,
+  isDisburserConfigured,
+  getDisburserAddressOrThrow,
+  PROCURE_YETI_DISBURSER_ADDRESS_CELO_SEPOLIA,
+} from './disburser';
+
+export {
+  buildDisburserSessionPermissions,
+  isDisburserConfigured,
+  getDisburserAddressOrThrow,
+  PROCURE_YETI_DISBURSER_ADDRESS_CELO_SEPOLIA,
+};
+
+/**
+ * @deprecated OBSOLETE DIRECT ERC-20 TRANSFER BUILDER.
+ * In the ProcureYeti Celo disburser architecture, the agent smart account does NOT hold
+ * treasury funds or execute direct ERC-20 transfers. All disbursements must route through
+ * ProcureYetiDisburser.sol to enforce on-chain supplier allowlisting and spend velocity caps.
+ *
+ * Use `buildDisburserSessionPermissions` from `./disburser` instead.
+ */
 export function buildProcurementSessionPermissions(
   params: ProcurementSessionParams
 ): { permissions: SessionPermissions; expiry: number } {
+  console.warn(
+    '[ProcureYeti Security Warning] `buildProcurementSessionPermissions` (direct ERC-20 transfer) is obsolete. All agent payments must use `buildDisburserSessionPermissions` targeting ProcureYetiDisburser.sol.'
+  );
   const token = resolveTokenConfig(params.token, params.tokenAddress);
   const dailyLimit = params.dailySpendingLimit ?? params.dailySpendingLimitCUSD ?? 500;
   const expirySeconds = params.expirySeconds ?? 7 * 24 * 60 * 60; // 7 days default
 
-  // 1. Contract Call Allowlisting:
-  // Strictly authorizes the token contract for ERC-20 transfer calls.
-  // The vendor wallet is the recipient argument in the transfer calldata.
   const calls: CallPermission[] = [
     {
       to: token.address,
@@ -100,8 +122,6 @@ export function buildProcurementSessionPermissions(
     },
   ];
 
-  // 2. Rolling Spend Limits:
-  // Exact raw integer calculation matching token decimals.
   const rawLimit = parseUnits(dailyLimit.toString(), token.decimals);
   const spend: SpendPermission[] = [
     {
@@ -111,7 +131,6 @@ export function buildProcurementSessionPermissions(
     },
   ];
 
-  // 3. Expiry timestamp
   const expiry = Math.floor(Date.now() / 1000) + expirySeconds;
 
   return {
@@ -136,17 +155,43 @@ export interface PreparedSessionDraft {
   expiryDate: string;
   permissions: SessionPermissions;
   requiresOwnerSignature: boolean;
+  targetContract: Address | 'Not Deployed';
 }
 
 /**
  * Prepares a human-readable session summary for the owner before authorization.
+ * Defaults to the disburser router session permissions when configured.
  */
 export function prepareSessionDraft(params: ProcurementSessionParams): PreparedSessionDraft {
   const token = resolveTokenConfig(params.token, params.tokenAddress);
   const dailyLimit = params.dailySpendingLimit ?? params.dailySpendingLimitCUSD ?? 500;
-  const { permissions, expiry } = buildProcurementSessionPermissions(params);
-  const rawLimit = parseUnits(dailyLimit.toString(), token.decimals);
 
+  if (isDisburserConfigured()) {
+    const { permissions, expiry, disburserAddress } = buildDisburserSessionPermissions({
+      dailySpendingLimitUSDC: dailyLimit,
+      expirySeconds: params.expirySeconds,
+    });
+    const rawLimit = parseUnits(dailyLimit.toString(), 6);
+    return {
+      network: ALTANA_CELO_CONFIG.chain.name,
+      chainId: ALTANA_CELO_CONFIG.chainId,
+      allowedVendorsCount: params.allowedVendorAddresses.length,
+      allowedVendorAddresses: params.allowedVendorAddresses,
+      dailySpendLimit: `$${dailyLimit.toLocaleString()} USDC`,
+      rawSpendLimit: rawLimit.toString(),
+      tokenAddress: CELO_SEPOLIA_USDC_ADDRESS,
+      tokenSymbol: 'USDC',
+      tokenDecimals: 6,
+      expiryDate: new Date(expiry * 1000).toISOString(),
+      permissions,
+      requiresOwnerSignature: true,
+      targetContract: disburserAddress,
+    };
+  }
+
+  // Fallback draft when disburser is not yet deployed
+  const expiry = Math.floor(Date.now() / 1000) + (params.expirySeconds ?? 7 * 24 * 60 * 60);
+  const rawLimit = parseUnits(dailyLimit.toString(), token.decimals);
   return {
     network: ALTANA_CELO_CONFIG.chain.name,
     chainId: ALTANA_CELO_CONFIG.chainId,
@@ -158,8 +203,9 @@ export function prepareSessionDraft(params: ProcurementSessionParams): PreparedS
     tokenSymbol: token.symbol,
     tokenDecimals: token.decimals,
     expiryDate: new Date(expiry * 1000).toISOString(),
-    permissions,
+    permissions: { calls: [], spend: [] },
     requiresOwnerSignature: true,
+    targetContract: 'Not Deployed',
   };
 }
 

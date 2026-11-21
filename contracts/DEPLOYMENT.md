@@ -11,19 +11,19 @@
 [ ProcureYetiDisburser ] ──► [ Check 1: msg.sender is Owner or Authorized Agent ]
        │                ──► [ Check 2: Recipient is in Approved Supplier Mapping ]
        │                ──► [ Check 3: Amount <= $500 USDC autonomous threshold ]
-       │                ──► [ Check 4: Cumulative <= $5,000 USDC 24h velocity cap ]
+       │                ──► [ Check 4: Cumulative <= $5,000 USDC daily cap (UTC calendar day) ]
        ▼
 [ Circle USDC on Celo ] ──► transfer(supplier, amount)
 ```
 
 ### Safety Guarantees
-1. **Zero Raw Token Transfer Access:** The Altana agent session key never holds direct permission to call `USDC.transfer(address,uint256)`. It can only invoke `ProcureYetiDisburser.disbursePayment(address,uint256,string)`.
+1. **Zero Raw Token Transfer Access:** The Altana agent session key never holds direct permission to call `USDC.transfer(address,uint256)`. It can only invoke `ProcureYetiDisburser.disburseWithMandate(bytes32,address,uint256,string)`.
 2. **On-Chain Supplier Allowlisting:** Payments to any unapproved address revert on-chain (`SupplierNotApproved(address)`), preventing unauthorized fund diversion even if agent prompt injection occurs.
 3. **Dual-Tier Thresholds:**
    - $\le \$500$ USDC: Executable autonomously by authorized Altana agent smart account.
    - $> \$500$ USDC and $\le \$2,500$ USDC: Requires direct human owner multi-sig / wallet execution.
    - $> \$2,500$ USDC: Reverts on-chain (`PaymentExceedsSingleCap`).
-4. **24-Hour Velocity Cap:** Cumulative daily disbursements are capped at $\$5,000$ USDC across a rolling day index.
+4. **Daily Velocity Cap:** Cumulative daily disbursements are capped at $\$5,000$ USDC across each UTC calendar day (`block.timestamp / 1 days`).
 5. **Reentrancy Protection & SafeERC20:** Built with checks-effects-interactions and SafeERC20 token transfer verification.
 
 ---
@@ -32,13 +32,13 @@
 
 | Parameter | Value | Details |
 | :--- | :--- | :--- |
-| **Network** | Celo Sepolia Testnet | OP-Stack L2 Testnet |
-| **Chain ID** | `11142220` (`0xa9feac`) | Official Celo Sepolia |
-| **RPC Endpoint** | `https://forno.celo-sepolia.celo-testnet.org` | Public Celo Sepolia RPC |
-| **Block Explorer** | [sepolia.celoscan.io](https://sepolia.celoscan.io) / [celo-sepolia.blockscout.com](https://celo-sepolia.blockscout.com) | CeloScan & Blockscout |
-| **Testnet Faucet** | [faucet.celo.org](https://faucet.celo.org) | Fund deployer with testnet CELO |
-| **Verified USDC** | `0x01C5C0122039549AD1493B8220cABEdD739BC44E` | Native Circle USDC (6 decimals) |
-| **Legacy Note** | `0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B` | USDC Fee Adapter (Do NOT use for transfers) |
+| **Testnet Network** | Celo Sepolia Testnet | OP-Stack L2 Testnet |
+| **Testnet Chain ID** | `11142220` (`0xa9feac`) | Official Celo Sepolia |
+| **Mainnet Network** | Celo Mainnet | Celo L2 |
+| **Mainnet Chain ID** | `42220` (`0xa4ec`) | Official Celo Mainnet |
+| **Mainnet USDC** | `0xcebA9300f2b948710d2653dD7B07f33A8B32118C` | Native Circle USDC (6 decimals, verified on Circle official docs & CeloScan) |
+| **Sepolia USDC** | `0x01C5C0122039549AD1493B8220cABEdD739BC44E` | Native Circle USDC (6 decimals, verified on Celo Sepolia Blockscout & CeloScan) |
+| **Legacy Note** | `0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B` | USDC Fee Adapter (Gas currency abstraction only; do NOT use for transfers) |
 
 ---
 
@@ -57,7 +57,7 @@
 | :--- | :--- | :--- | :--- | :--- |
 | `_usdc` | `address` | `0x01C5C0122039549AD1493B8220cABEdD739BC44E` | `0x01C5C0122039549AD1493B8220cABEdD739BC44E` | Verified Circle USDC contract |
 | `_maxSinglePayment` | `uint256` | $\$2,500$ USDC | `2500000000` | Max single transaction limit |
-| `_dailyVelocityCap` | `uint256` | $\$5,000$ USDC | `5000000000` | 24-hour spending velocity cap |
+| `_dailyVelocityCap` | `uint256` | $\$5,000$ USDC | `5000000000` | UTC calendar-day spending velocity cap (block.timestamp / 1 days) |
 | `_autonomousThreshold` | `uint256` | $\$500$ USDC | `500000000` | Autonomous agent execution cap |
 
 ### Pre-computed ABI-Encoded Constructor Calldata (Hex)
@@ -163,7 +163,7 @@ const { permissions, expiry } = buildDisburserSessionPermissions({
 });
 
 // Resulting Altana Session Permissions:
-// permissions.calls: [{ to: disburserAddress, signature: 'disbursePayment(address,uint256,string)' }]
+// permissions.calls: [{ to: disburserAddress, signature: 'disburseWithMandate(bytes32,address,uint256,string)' }]
 // permissions.spend: [
 //   { token: '0x01C5C0122039549AD1493B8220cABEdD739BC44E', limit: 500000000n, period: 'day' },
 //   { limit: 1000000000000000000n, period: 'day' } // Native CELO gas headroom for relay fee submission
@@ -174,4 +174,4 @@ const { permissions, expiry } = buildDisburserSessionPermissions({
 - **Altana Account Spend Limits:** In Altana / Porto accounts, `SpendPermission` tracks direct ERC-20 calls (`transfer` / `transferFrom`) or native ETH/CELO transfers originating from the smart account.
 - **Router Internal Disbursements:** `ProcureYetiDisburser` holds treasury USDC in its own contract address and executes `usdc.safeTransfer(supplier, amount)` internally.
 - **Tracking Invariance:** Altana's account-level USDC spend limits **do NOT track transfers executed internally by the router**. The agent smart account's own USDC balance is never debited during disbursements.
-- **Authoritative Enforcement:** All spending guardrails ($500 autonomous threshold for agents, $2,500 max single payment, $5,000 rolling 24h velocity cap, and supplier whitelist verification) are enforced **internally and directly on-chain by `ProcureYetiDisburser.sol`**.
+- **Authoritative Enforcement:** All spending guardrails ($500 autonomous threshold for agents, $2,500 max single payment, $5,000 daily velocity cap across UTC calendar days, and supplier whitelist verification) are enforced **internally and directly on-chain by `ProcureYetiDisburser.sol`**.

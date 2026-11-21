@@ -128,14 +128,25 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({
               <div className="flex items-start gap-2">
                 <Sparkles className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
                 <div className="space-y-0.5">
-                  <span className="font-semibold text-slate-300">ProcureYeti Heuristic Scoring [Demo]:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-slate-300">Sentinel Price &amp; SLA Heuristic [Deterministic]:</span>
+                    {quote.amount > 3000 ? (
+                      <span className="px-2 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
+                        Price Warning: High Outlier
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
+                        Fair Market Spread
+                      </span>
+                    )}
+                  </div>
                   <p className="text-slate-400 text-[11px] leading-relaxed">{quote.notes}</p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
                 <div className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-mono text-emerald-400">
-                  Heuristic: {quote.aiScore}/100
+                  Sentinel Score: {quote.aiScore}/100
                 </div>
               </div>
             </div>

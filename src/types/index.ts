@@ -6,6 +6,8 @@ export type RequestStatus =
   | 'awaiting_execution'
   | 'rejected';
 
+export type MandateStatus = 'none' | 'prepared' | 'active' | 'used' | 'revoked' | 'expired';
+
 export type CurrencyType = 'cUSD' | 'CELO' | 'USDC';
 
 export type CeloNetwork = 'celo_sepolia' | 'celo_mainnet';
@@ -23,6 +25,10 @@ export interface PurchaseRequest {
   justification?: string;
   status: RequestStatus;
   createdAt: string;
+  mandateId?: `0x${string}`;
+  mandateStatus?: MandateStatus;
+  mandateMaxAmount?: number;
+  mandateExpiry?: string;
   aiRecommendation?: {
     suggestedSupplier: string;
     bestPrice: number;
@@ -82,7 +88,12 @@ export interface ApprovalItem {
   aiRiskScore: 'low' | 'medium' | 'high';
   aiNotes: string;
   status: 'pending' | 'demo_approved' | 'awaiting_execution' | 'rejected';
+  mandateId?: `0x${string}`;
+  mandateStatus?: MandateStatus;
+  mandateMaxAmount?: number;
+  mandateExpiry?: string;
   demoRef?: string;
+  receiptId?: string;
 }
 
 export interface AltanaWalletConfig {

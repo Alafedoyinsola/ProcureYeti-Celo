@@ -196,6 +196,21 @@ export const PurchaseRequestsView: React.FC<PurchaseRequestsViewProps> = ({
                         <StatusIcon className="w-3 h-3" />
                         <span>{statusMeta.label}</span>
                       </span>
+
+                      {/* Mandate Status Badge */}
+                      {req.mandateStatus === 'active' ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                          Mandate Active: {req.mandateId ? `${req.mandateId.slice(0, 8)}...` : 'On-Chain'}
+                        </span>
+                      ) : req.mandateStatus === 'prepared' || req.mandateId ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+                          Mandate Prepared (Demo): {req.mandateId ? `${req.mandateId.slice(0, 8)}...` : 'Local'}
+                        </span>
+                      ) : req.status === 'pending_approval' ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                          Owner Mandate Required
+                        </span>
+                      ) : null}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">

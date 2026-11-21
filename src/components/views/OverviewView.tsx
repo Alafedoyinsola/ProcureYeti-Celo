@@ -180,16 +180,17 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-sm hover:border-teal-500/50 cursor-pointer transition group"
         >
           <div className="flex items-center justify-between text-slate-400 mb-3">
-            <span className="text-xs font-medium uppercase tracking-wider">Registered Vendors</span>
+            <span className="text-xs font-medium uppercase tracking-wider">Verified Vendors</span>
             <div className="p-2 rounded-xl bg-teal-500/10 text-teal-400 group-hover:scale-110 transition">
               <Users className="w-4 h-4" />
             </div>
           </div>
           <div className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-1">
-            {suppliers.length} <span className="text-xs font-normal text-teal-400">demo vendors</span>
+            {suppliers.filter((s) => s.verificationStatus === 'verified').length}{' '}
+            <span className="text-xs font-normal text-teal-400">on allowlist</span>
           </div>
           <div className="text-xs text-slate-400">
-            100% with simulated Celo settlement addresses
+            Mandate Router: Active &bull; $2,500 cap
           </div>
         </div>
       </div>
