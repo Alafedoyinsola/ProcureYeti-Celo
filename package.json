@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test test/disburser.test.js test/evm-disburser.test.js",
+    "test": "node --test test/disburser.test.js test/evm-disburser.test.js test/attribution.test.js",
     "prepare:disburser": "node scripts/deploy-disburser.js"
   },
   "dependencies": {

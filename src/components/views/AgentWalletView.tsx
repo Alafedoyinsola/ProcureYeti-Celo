@@ -13,6 +13,8 @@ import {
   Zap,
   Activity,
   FileCode2,
+  AlertTriangle,
+  Ban,
 } from 'lucide-react';
 import { AltanaWalletConfig } from '@/types';
 import {
@@ -22,6 +24,8 @@ import {
   CELO_SEPOLIA_CUSD_ADDRESS,
   PROCURE_YETI_DISBURSER_ADDRESS_CELO_SEPOLIA,
   AltanaConnectionStatus,
+  getAttributionReport,
+  HACKATHON_ATTRIBUTION_TAG,
 } from '@/lib/altana';
 
 interface AgentWalletViewProps {
@@ -33,6 +37,7 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
   walletConfig,
   onUpdatePolicy,
 }) => {
+  const attributionReport = getAttributionReport(ALTANA_CELO_CONFIG.chainId);
   const [connectionStatus, setConnectionStatus] = useState<AltanaConnectionStatus>('demo');
   const [copiedAgent, setCopiedAgent] = useState(false);
   const [copiedOwner, setCopiedOwner] = useState(false);
@@ -513,17 +518,18 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
       </div>
 
       {/* Celo Attribution & Relay Execution Gate Banner */}
-      <div className="p-6 rounded-2xl bg-slate-900 border border-indigo-500/30 shadow-xl space-y-4">
+      <div className="p-6 rounded-2xl bg-slate-900 border border-amber-500/30 shadow-xl space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-              <Shield className="w-5 h-5" />
+            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+              <Ban className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                <span>Celo ERC-8021 Hackathon Attribution &amp; Relay Safety Gate</span>
-                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold">
-                  Execution Gate Engaged
+              <h4 className="text-sm font-bold text-white flex items-center gap-2 flex-wrap">
+                <span>Celo ERC-8021 Attribution &amp; Relay Safety Gate</span>
+                <span className="px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40 text-[10px] font-bold flex items-center gap-1">
+                  <Ban className="w-3 h-3" />
+                  Live Execution Blocked: {attributionReport.status}
                 </span>
               </h4>
               <p className="text-xs text-slate-400">
@@ -532,8 +538,23 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
             </div>
           </div>
 
-          <div className="font-mono text-xs px-3 py-1.5 rounded-xl bg-slate-950 border border-indigo-500/40 text-indigo-300">
-            Tag: celo_43f4a9848a4b
+          <div className="flex items-center gap-2">
+            <div className="font-mono text-xs px-3 py-1.5 rounded-xl bg-slate-950 border border-amber-500/40 text-amber-300">
+              Configured Tag: {attributionReport.tag}
+            </div>
+          </div>
+        </div>
+
+        {/* Prominent Warning Callout */}
+        <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-xs">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold text-amber-300">
+              Live On-Chain Execution Blocked by Unresolved Attribution Compatibility
+            </p>
+            <p className="text-slate-300 text-[11px] leading-relaxed">
+              Altana SDK v1.1.0 relays transactions via Ithaca Porto EIP-7702 envelopes. Celo&apos;s official attribution verifier (<code>@celo/attribution-tags</code>) inspects the outermost transaction envelope calldata. Appending attribution tags to inner calldata does not survive the Porto relayer envelope. The configured tag (<code>{HACKATHON_ATTRIBUTION_TAG}</code>) is an intent marker, not on-chain proof of qualifying execution.
+            </p>
           </div>
         </div>
 
@@ -541,18 +562,14 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
           <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
             <span className="font-bold text-amber-400 text-xs">Technical Architectural Incompatibility:</span>
             <p className="text-slate-300 text-[11px] leading-relaxed">
-              Altana SDK v1.1.0 relays transactions via Ithaca Porto EIP-7702 delegated call envelopes. Celo&apos;s official
-              attribution verifier (<code>@celo/attribution-tags</code>) inspects the outermost transaction envelope calldata.
-              Appending attribution tags to inner calldata does not survive the Porto relayer envelope.
+              {attributionReport.blockerReason}
             </p>
           </div>
 
           <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
             <span className="font-bold text-emerald-400 text-xs">Protective Sentinel Policy:</span>
             <p className="text-slate-300 text-[11px] leading-relaxed">
-              To prevent spending hackathon treasury funds on uncredited mainnet transactions, live transaction relay is
-              systematically gated. Purchase mandates and execution plans are fully prepared and cryptographically signed with
-              auditable receipts.
+              {attributionReport.safestAction}
             </p>
           </div>
         </div>

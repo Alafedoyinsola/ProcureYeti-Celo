@@ -1,5 +1,6 @@
 import { encodeFunctionData, parseUnits, type Address, erc20Abi } from 'viem';
 import type { Call, ExecuteResult, RevokeSessionResult, Session } from '@altananetwork/sdk';
+import { assertExecutionAllowed } from './attribution';
 import { resolveTokenConfig } from './session';
 import type { TokenConfig } from './tokens';
 import {
@@ -176,3 +177,19 @@ export function prepareRevocationPlan(session: Session): PreparedRevocationPlan 
 
 export type ExecutionOutcome = ExecuteResult;
 export type RevocationOutcome = RevokeSessionResult;
+
+/**
+ * Guarded execution entry point for agent disbursements.
+ * Enforces the Attribution & Relay Safety Gate:
+ * Immediately calls `assertExecutionAllowed()` before touching the relay or signer.
+ * Always throws AttributionGateError while outer-envelope attribution is unresolved.
+ */
+export async function executeGuardedExecutionPlan(
+  plan: PreparedExecutionPlan,
+  session: Session
+): Promise<ExecuteResult> {
+  void plan;
+  void session;
+  assertExecutionAllowed();
+  throw new Error('Unreachable: assertExecutionAllowed must block execution.');
+}

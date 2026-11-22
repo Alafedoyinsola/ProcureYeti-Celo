@@ -10,6 +10,7 @@ import {
 } from '@altananetwork/sdk';
 import { type Address } from 'viem';
 import { ALTANA_CELO_CONFIG } from './client';
+import { assertExecutionAllowed } from './attribution';
 
 /**
  * Verified Official ERC-8004 Identity Registry Address on Celo Sepolia (Chain ID 11142220)
@@ -117,4 +118,15 @@ export function prepareErc8004SetAgentUriCall(params: {
  */
 export function getErc8004SessionPermissions(): readonly CallPermission[] {
   return erc8004RegisterPermissions(ALTANA_CELO_CONFIG.chainId);
+}
+
+/**
+ * Guarded ERC-8004 identity registration broadcast entry point.
+ * Enforces the Attribution & Relay Safety Gate:
+ * Immediately calls `assertExecutionAllowed()` before touching the relay or signer.
+ * Always throws AttributionGateError while outer-envelope attribution is unresolved.
+ */
+export async function broadcastGuardedErc8004Registration(): Promise<never> {
+  assertExecutionAllowed(ALTANA_CELO_CONFIG.chainId);
+  throw new Error('Unreachable: assertExecutionAllowed must block execution.');
 }

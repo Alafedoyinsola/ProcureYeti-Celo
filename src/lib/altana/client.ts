@@ -1,4 +1,5 @@
 import { createClient, CELO, CELO_SEPOLIA, type Client } from '@altananetwork/sdk';
+import { wrapWithAttributionGate } from './attribution';
 
 /**
  * Altana SDK Client Configuration for ProcureYeti Celo
@@ -17,13 +18,21 @@ let clientInstance: Client | null = null;
 
 /**
  * Returns a singleton Altana client configured with the active Celo network.
+ * Systematically guarded by the Attribution & Relay Safety Gate:
+ * 1. Sets `agentIdentity: false` to block automatic un-attributed ERC-8004 registration transactions.
+ * 2. Wraps the client in an Attribution Gate Proxy to intercept all live broadcast methods.
+ * 3. Preserves read queries, quotes, and offline preparation.
  * Safe to call on both client and server.
  */
 export function getAltanaClient(): Client {
   if (!clientInstance) {
-    clientInstance = createClient({
+    const rawClient = createClient({
       chains: [ALTANA_CELO_CONFIG],
+      // Explicitly disable automatic ERC-8004 background registration
+      agentIdentity: false,
     });
+
+    clientInstance = wrapWithAttributionGate(rawClient, ALTANA_CELO_CONFIG.chainId);
   }
   return clientInstance;
 }
