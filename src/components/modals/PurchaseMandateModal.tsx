@@ -29,6 +29,7 @@ import {
   type DecisionAction,
 } from '@/lib/sentinel/investigation';
 import { type Address, isAddress } from 'viem';
+import { ALTANA_CELO_CONFIG } from '@/lib/altana';
 
 interface PurchaseMandateModalProps {
   isOpen: boolean;
@@ -154,6 +155,10 @@ export const PurchaseMandateModal: React.FC<PurchaseMandateModalProps> = ({
   const validationErrors: string[] = useMemo(() => {
     const errors: string[] = [];
     if (!request) return errors;
+
+    if (!PROCURE_YETI_DISBURSER_ADDRESS || !isAddress(PROCURE_YETI_DISBURSER_ADDRESS)) {
+      errors.push('A valid disburser contract address must be configured before mandate approval.');
+    }
 
     if (!supplierAddress || !isAddress(supplierAddress)) {
       errors.push('Supplier wallet address must be a valid 42-character hex address.');
@@ -531,7 +536,7 @@ export const PurchaseMandateModal: React.FC<PurchaseMandateModalProps> = ({
                 <div className="flex items-center gap-2 text-[10px] text-slate-400">
                   <Info className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                   <span>
-                    Prepares owner transaction for the Celo Sepolia disburser router. Does NOT claim on-chain commitment until confirmed transaction receipt.
+                    Prepares an owner transaction for the {ALTANA_CELO_CONFIG.chain.name} disburser router. No on-chain commitment is claimed until a transaction receipt is confirmed.
                   </span>
                 </div>
               </div>
@@ -584,12 +589,12 @@ export const PurchaseMandateModal: React.FC<PurchaseMandateModalProps> = ({
                   )}
 
                   <button
-                    disabled={!isValid || actionInProgress !== null}
+                    disabled={!isValid || actionInProgress !== null || !preparedCallPreview}
                     onClick={() => handleExecuteAction('approve_and_generate_mandate')}
                     className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold shadow-md shadow-emerald-500/20 transition hover:scale-[1.02] disabled:opacity-40 disabled:hover:scale-100 flex items-center gap-2"
                   >
                     <ShieldCheck className="w-4 h-4 stroke-[2.5]" />
-                    <span>Sign &amp; Generate Purchase Mandate</span>
+                    <span>Approve &amp; Prepare Purchase Mandate</span>
                   </button>
                 </div>
               </div>
