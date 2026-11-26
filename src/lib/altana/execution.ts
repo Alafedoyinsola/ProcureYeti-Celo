@@ -6,7 +6,6 @@ import type { TokenConfig } from './tokens';
 import {
   buildMandatePaymentCall,
   deriveMandateId,
-  isDisburserConfigured,
   getDisburserAddressOrThrow,
 } from './disburser';
 import { getUsdcTokenConfig } from './tokens';
@@ -112,48 +111,27 @@ export interface PreparedExecutionPlan {
 
 /**
  * Validates and prepares an execution plan against session thresholds.
- * Routes through ProcureYetiDisburser Purchase Mandate engine when configured.
+ * Every agent payment must route through the ProcureYetiDisburser
+ * Purchase Mandate engine. No direct ERC-20 fallback is permitted.
  * Does not broadcast or execute.
  */
 export function prepareExecutionPlan(
   params: PreparePaymentCallParams,
   sessionThreshold: number = 500
 ): PreparedExecutionPlan {
-  if (isDisburserConfigured() || params.disburserAddress) {
-    const paymentAmount = params.amount ?? params.amountCUSD ?? 0;
-    return prepareDisburserExecutionPlan(
-      {
-        mandateId: params.mandateId,
-        supplierAddress: params.vendorAddress,
-        amountUSDC: paymentAmount,
-        requisitionId: params.requisitionId || 'PR-REQ',
-        disburserAddress: params.disburserAddress,
-      },
-      sessionThreshold
-    );
-  }
-
-  // Deprecated direct ERC-20 fallback when disburser is not configured
-  const token = resolveTokenConfig(params.token, params.tokenAddress);
   const paymentAmount = params.amount ?? params.amountCUSD ?? 0;
-  const call = buildVendorPaymentCall(params);
-  const isWithinSessionLimit = paymentAmount <= sessionThreshold;
-  const rawAmount = parseUnits(paymentAmount.toString(), token.decimals);
 
-  return {
-    call,
-    vendorAddress: params.vendorAddress,
-    amountFormatted: `$${paymentAmount.toLocaleString()} ${token.symbol}`,
-    rawAmount: rawAmount.toString(),
-    tokenAddress: token.address,
-    tokenSymbol: token.symbol,
-    tokenDecimals: token.decimals,
-    isWithinSessionLimit,
-    requiresOwnerSignature: !isWithinSessionLimit,
-    targetNetwork: `${ALTANA_CELO_CONFIG.chain.name} (Chain ID ${ALTANA_CELO_CONFIG.chainId})`,
-  };
+  return prepareDisburserExecutionPlan(
+    {
+      mandateId: params.mandateId,
+      supplierAddress: params.vendorAddress,
+      amountUSDC: paymentAmount,
+      requisitionId: params.requisitionId || 'PR-REQ',
+      disburserAddress: params.disburserAddress,
+    },
+    sessionThreshold
+  );
 }
-
 export interface PreparedRevocationPlan {
   sessionPublicKey: string;
   walletAddress: Address;
