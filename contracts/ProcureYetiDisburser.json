@@ -1,6 +1,6 @@
 {
   "contractName": "ProcureYetiDisburser",
-  "compiler": "0.8.28",
+  "compiler": "0.8.28+commit.7893614a.Emscripten.clang",
   "evmVersion": "cancun",
   "optimizer": {
     "enabled": true,

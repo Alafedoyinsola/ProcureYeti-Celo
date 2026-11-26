@@ -1,21 +1,26 @@
+
 /**
- * Deployment & Preparation Script for ProcureYetiDisburser on Celo Sepolia
+ * ProcureYetiDisburser Deployment & Preparation Script
+ * Network: Celo Sepolia
  *
- * SAFETY INVARIANT:
- * By default, this script runs in DRY-RUN / PREPARATION mode:
- * It compiles the contract with Cancun EVM settings & 200 optimizer runs,
- * generates the ABI and bytecode artifacts, encodes constructor parameters,
- * and outputs exact deployment instructions.
+ * SAFETY:
+ * 1. Default mode is DRY-RUN. No transactions are signed or broadcast.
+ * 2. Live deployment requires --broadcast and a deployer private key.
+ * 3. Live deployment verifies the RPC chain ID.
+ * 4. Live deployment verifies USDC contract bytecode and 6 decimals.
+ * 5. Deployment receipt must confirm successful contract creation.
  *
- * No transactions are signed or broadcast unless explicitly invoked with:
- * --broadcast AND a valid DEPLOYER_PRIVATE_KEY environment variable.
+ * IMPORTANT:
+ * This script targets Celo Sepolia (11142220), not Celo Mainnet.
  */
 
 const fs = require('fs');
 const path = require('path');
 const solc = require('solc');
+
 const {
   parseUnits,
+  formatUnits,
   encodeDeployData,
   encodeAbiParameters,
   parseAbiParameters,
@@ -23,42 +28,106 @@ const {
   createPublicClient,
   http,
 } = require('viem');
+
 const { privateKeyToAccount } = require('viem/accounts');
 const { celoSepolia } = require('viem/chains');
 
-// 1. Network Constants
+// ============================================================
+// 1. NETWORK CONFIGURATION
+// ============================================================
+
 const CELO_SEPOLIA_CHAIN_ID = 11142220;
+
 const CELO_SEPOLIA_RPC =
   process.env.NEXT_PUBLIC_CELO_SEPOLIA_RPC ||
   'https://forno.celo-sepolia.celo-testnet.org';
-const CELO_SEPOLIA_USDC = '0x01C5C0122039549AD1493B8220cABEdD739BC44E';
 
-// 2. Production Governance Caps (6 decimals for USDC)
-const MAX_SINGLE_PAYMENT = parseUnits('2500', 6); // $2,500 USDC
-const DAILY_VELOCITY_CAP = parseUnits('5000', 6); // $5,000 USDC
-const AUTONOMOUS_THRESHOLD = parseUnits('500', 6); // $500 USDC
+// Verify this address independently before any live deployment.
+const CELO_SEPOLIA_USDC =
+  '0x01C5C0122039549AD1493B8220cABEdD739BC44E';
+
+const EXPECTED_USDC_DECIMALS = 6;
+
+// ============================================================
+// 2. GOVERNANCE LIMITS
+// ============================================================
+
+const MAX_SINGLE_PAYMENT = parseUnits('2500', 6);
+const DAILY_VELOCITY_CAP = parseUnits('5000', 6);
+const AUTONOMOUS_THRESHOLD = parseUnits('500', 6);
+
+// ============================================================
+// 3. USDC VALIDATION ABI
+// ============================================================
+
+const USDC_VALIDATION_ABI = [
+  {
+    type: 'function',
+    name: 'decimals',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint8' }],
+  },
+];
+
+// ============================================================
+// 4. MAIN
+// ============================================================
 
 async function main() {
   const isBroadcast = process.argv.includes('--broadcast');
 
+  console.log('\n===============================================================');
+  console.log('       ProcureYetiDisburser - Celo Sepolia Deployment');
   console.log('===============================================================');
-  console.log('       ProcureYetiDisburser - Celo Sepolia Deployment          ');
-  console.log('===============================================================');
-  console.log('Target Network:     Celo Sepolia Testnet (Chain ID 11142220)');
+  console.log('Target Network:     Celo Sepolia');
+  console.log('Expected Chain ID:  ', CELO_SEPOLIA_CHAIN_ID);
   console.log('RPC Endpoint:       ', CELO_SEPOLIA_RPC);
-  console.log('Verified USDC Token:', CELO_SEPOLIA_USDC);
+  console.log('USDC Address:       ', CELO_SEPOLIA_USDC);
   console.log('EVM Target:         cancun');
   console.log('Solidity Optimizer: enabled (200 runs)');
-  console.log('Mode:               ', isBroadcast ? '⚡ LIVE BROADCAST REQUESTED' : '🔍 DRY-RUN PREPARATION');
+  console.log(
+    'Execution Mode:     ',
+    isBroadcast ? 'LIVE BROADCAST REQUESTED' : 'DRY-RUN PREPARATION'
+  );
   console.log('---------------------------------------------------------------\n');
 
-  // Step 1: Read and Compile Solidity Contract
-  const contractPath = path.join(__dirname, '../contracts/ProcureYetiDisburser.sol');
+  // ==========================================================
+  // STEP 1: VERIFY SOLIDITY COMPILER
+  // ==========================================================
+
+  const compilerVersion = solc.version();
+
+  console.log('Solidity Compiler:', compilerVersion);
+
+  if (!compilerVersion.startsWith('0.8.28+')) {
+    throw new Error(
+      `Unexpected Solidity compiler version: ${compilerVersion}. Expected 0.8.28.`
+    );
+  }
+
+  // ==========================================================
+  // STEP 2: READ AND COMPILE CONTRACT
+  // ==========================================================
+
+  const contractPath = path.join(
+    __dirname,
+    '../contracts/ProcureYetiDisburser.sol'
+  );
+
+  if (!fs.existsSync(contractPath)) {
+    throw new Error(`Contract file not found: ${contractPath}`);
+  }
+
   const source = fs.readFileSync(contractPath, 'utf8');
 
   const input = {
     language: 'Solidity',
-    sources: { 'ProcureYetiDisburser.sol': { content: source } },
+    sources: {
+      'ProcureYetiDisburser.sol': {
+        content: source,
+      },
+    },
     settings: {
       optimizer: {
         enabled: true,
@@ -67,39 +136,81 @@ async function main() {
       evmVersion: 'cancun',
       outputSelection: {
         '*': {
-          '*': ['abi', 'evm.bytecode', 'evm.deployedBytecode'],
+          '*': [
+            'abi',
+            'evm.bytecode',
+            'evm.deployedBytecode',
+          ],
         },
       },
     },
   };
 
-  const output = JSON.parse(solc.compile(JSON.stringify(input)));
+  const output = JSON.parse(
+    solc.compile(JSON.stringify(input))
+  );
+
   if (output.errors) {
-    const errors = output.errors.filter((e) => e.severity === 'error');
+    const errors = output.errors.filter(
+      (error) => error.severity === 'error'
+    );
+
     if (errors.length > 0) {
-      throw new Error('Solidity compilation failed:\n' + errors.map((e) => e.formattedMessage).join('\n'));
+      throw new Error(
+        'Solidity compilation failed:\n' +
+          errors.map((error) => error.formattedMessage).join('\n')
+      );
     }
   }
 
-  const contract = output.contracts['ProcureYetiDisburser.sol']['ProcureYetiDisburser'];
-  const abi = contract.abi;
-  const bytecode = '0x' + contract.evm.bytecode.object;
-  const deployedBytecode = '0x' + contract.evm.deployedBytecode.object;
+  const compiledContract =
+    output.contracts?.['ProcureYetiDisburser.sol']?.[
+      'ProcureYetiDisburser'
+    ];
 
-  console.log('✔ Contract compiled successfully!');
-  console.log('  Bytecode size:         ', bytecode.length / 2, 'bytes');
-  console.log('  Deployed bytecode size:', deployedBytecode.length / 2, 'bytes');
+  if (!compiledContract) {
+    throw new Error(
+      'ProcureYetiDisburser contract was not found in compiler output.'
+    );
+  }
 
-  // Step 2: Save compiled artifact
-  const artifactPath = path.join(__dirname, '../contracts/ProcureYetiDisburser.json');
+  const abi = compiledContract.abi;
+  const bytecode = `0x${compiledContract.evm.bytecode.object}`;
+  const deployedBytecode =
+    `0x${compiledContract.evm.deployedBytecode.object}`;
+
+  if (bytecode === '0x') {
+    throw new Error('Compiled deployment bytecode is empty.');
+  }
+
+  console.log('\nContract compiled successfully.');
+  console.log('Creation bytecode size: ', (bytecode.length - 2) / 2, 'bytes');
+  console.log(
+    'Runtime bytecode size:  ',
+    (deployedBytecode.length - 2) / 2,
+    'bytes'
+  );
+
+  // ==========================================================
+  // STEP 3: SAVE COMPILED ARTIFACT
+  // ==========================================================
+
+  const artifactPath = path.join(
+    __dirname,
+    '../contracts/ProcureYetiDisburser.json'
+  );
+
   fs.writeFileSync(
     artifactPath,
     JSON.stringify(
       {
         contractName: 'ProcureYetiDisburser',
-        compiler: '0.8.28',
+        compiler: compilerVersion,
         evmVersion: 'cancun',
-        optimizer: { enabled: true, runs: 200 },
+        optimizer: {
+          enabled: true,
+          runs: 200,
+        },
         abi,
         bytecode,
         deployedBytecode,
@@ -108,9 +219,14 @@ async function main() {
       2
     )
   );
-  console.log('✔ Compiled artifact saved to: contracts/ProcureYetiDisburser.json\n');
 
-  // Step 3: Format Constructor Arguments
+  console.log('\nCompiled artifact saved:');
+  console.log('contracts/ProcureYetiDisburser.json');
+
+  // ==========================================================
+  // STEP 4: CONSTRUCTOR ARGUMENTS
+  // ==========================================================
+
   const constructorArgs = [
     CELO_SEPOLIA_USDC,
     MAX_SINGLE_PAYMENT,
@@ -121,7 +237,11 @@ async function main() {
   const paramsDefinition = parseAbiParameters(
     'address _usdc, uint256 _maxSinglePayment, uint256 _dailyVelocityCap, uint256 _autonomousThreshold'
   );
-  const encodedConstructorArgs = encodeAbiParameters(paramsDefinition, constructorArgs);
+
+  const encodedConstructorArgs = encodeAbiParameters(
+    paramsDefinition,
+    constructorArgs
+  );
 
   const deployData = encodeDeployData({
     abi,
@@ -129,72 +249,134 @@ async function main() {
     args: constructorArgs,
   });
 
-  console.log('--- Constructor Arguments (Human & Encoded) ---');
-  console.log('1. _usdc:                ', CELO_SEPOLIA_USDC, '(Native Circle USDC)');
-  console.log('2. _maxSinglePayment:    ', MAX_SINGLE_PAYMENT.toString(), '($2,500 USDC)');
-  console.log('3. _dailyVelocityCap:    ', DAILY_VELOCITY_CAP.toString(), '($5,000 USDC)');
-  console.log('4. _autonomousThreshold: ', AUTONOMOUS_THRESHOLD.toString(), '($500 USDC)');
-  console.log('\nABI-Encoded Constructor Args (for block explorer verification / cast):');
+  console.log('\n--- Constructor Arguments ---');
+  console.log('USDC Address:          ', CELO_SEPOLIA_USDC);
+  console.log('Maximum Single Payment:', formatUnits(MAX_SINGLE_PAYMENT, 6), 'USDC');
+  console.log('Daily Velocity Cap:    ', formatUnits(DAILY_VELOCITY_CAP, 6), 'USDC');
+  console.log('Autonomous Threshold:  ', formatUnits(AUTONOMOUS_THRESHOLD, 6), 'USDC');
+
+  console.log('\nABI-Encoded Constructor Arguments:');
   console.log(encodedConstructorArgs);
 
-  // Step 4: Check execution mode
+  // ==========================================================
+  // STEP 5: DRY-RUN EXIT
+  // ==========================================================
+
   if (!isBroadcast) {
     console.log('\n===============================================================');
-    console.log('                     DRY-RUN COMPLETE                          ');
+    console.log('                    DRY-RUN COMPLETE');
     console.log('===============================================================');
-    console.log('To deploy to Celo Sepolia with your owner wallet:');
-    console.log('');
-    console.log('Option A: Via Viem Deployer (this script):');
-    console.log('  $env:DEPLOYER_PRIVATE_KEY="0x..."');
+    console.log('Contract compilation: SUCCESS');
+    console.log('Artifact generation: SUCCESS');
+    console.log('Constructor encoding: SUCCESS');
+    console.log('Transaction broadcast: NOT PERFORMED');
+    console.log('\nNo wallet was loaded and no transaction was signed.');
+    console.log('\nDeployment data is prepared for Celo Sepolia.');
+    console.log('\nLive deployment requires a separate explicit command:');
     console.log('  node scripts/deploy-disburser.js --broadcast');
-    console.log('');
-    console.log('Option B: Via Foundry (forge create):');
-    console.log('  forge create contracts/ProcureYetiDisburser.sol:ProcureYetiDisburser \\');
-    console.log('    --rpc-url https://forno.celo-sepolia.celo-testnet.org \\');
-    console.log('    --private-key $DEPLOYER_PRIVATE_KEY \\');
-    console.log('    --constructor-args ' + CELO_SEPOLIA_USDC + ' 2500000000 5000000000 500000000 \\');
-    console.log('    --evm-version cancun --optimize --optimizer-runs 200');
-    console.log('');
-    console.log('Option C: Via Cast:');
-    console.log('  cast send --rpc-url https://forno.celo-sepolia.celo-testnet.org \\');
-    console.log('    --private-key $DEPLOYER_PRIVATE_KEY --create ' + deployData.slice(0, 50) + '... (full bytecode)');
-    console.log('');
-    console.log('Post-Deployment Steps:');
-    console.log('  1. Add deployed address to .env.local: NEXT_PUBLIC_DISBURSER_ADDRESS=<address>');
-    console.log('  2. Call disburser.approveSuppliersBatch([...], [...]) with initial vendors.');
-    console.log('  3. Call disburser.setAuthorizedAgent(altanaSmartAccount, true).');
-    console.log('  4. Approve & deposit treasury USDC via disburser.depositTreasury(amount).');
-    console.log('===============================================================');
+    console.log('\nThat command also requires DEPLOYER_PRIVATE_KEY.');
+    console.log('===============================================================\n');
+
+    console.log('Prepared deployment bytecode length:', deployData.length);
     return;
   }
 
-  // Live Broadcast Execution (Guarded)
-  const privateKey = process.env.DEPLOYER_PRIVATE_KEY || process.env.PRIVATE_KEY;
+  // ==========================================================
+  // STEP 6: LIVE DEPLOYMENT GUARDS
+  // ==========================================================
+
+  const privateKey =
+    process.env.DEPLOYER_PRIVATE_KEY ||
+    process.env.PRIVATE_KEY;
+
   if (!privateKey) {
     throw new Error(
-      'Live broadcast requested (--broadcast) but DEPLOYER_PRIVATE_KEY or PRIVATE_KEY environment variable is missing.'
+      'Broadcast requested, but DEPLOYER_PRIVATE_KEY or PRIVATE_KEY is missing.'
     );
   }
 
-  const formattedKey = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
-  const account = privateKeyToAccount(formattedKey);
+  const formattedKey = privateKey.startsWith('0x')
+    ? privateKey
+    : `0x${privateKey}`;
 
-  console.log('\n--- Deployer Wallet Details ---');
-  console.log('Deployer / Owner Address:', account.address);
+  if (!/^0x[0-9a-fA-F]{64}$/.test(formattedKey)) {
+    throw new Error('The supplied deployer private key has an invalid format.');
+  }
+
+  const account = privateKeyToAccount(formattedKey);
 
   const publicClient = createPublicClient({
     chain: celoSepolia,
     transport: http(CELO_SEPOLIA_RPC),
   });
 
-  const balance = await publicClient.getBalance({ address: account.address });
-  console.log('Deployer CELO Balance:   ', (Number(balance) / 1e18).toFixed(4), 'CELO');
+  // Guard A: Confirm RPC chain ID.
+
+  console.log('\nChecking connected network...');
+
+  const actualChainId = await publicClient.getChainId();
+
+  if (actualChainId !== CELO_SEPOLIA_CHAIN_ID) {
+    throw new Error(
+      `Wrong network. Expected ${CELO_SEPOLIA_CHAIN_ID}, received ${actualChainId}.`
+    );
+  }
+
+  console.log('Network verification: PASSED');
+
+  // Guard B: Confirm USDC contract exists.
+
+  console.log('\nChecking USDC contract bytecode...');
+
+  const tokenCode = await publicClient.getCode({
+    address: CELO_SEPOLIA_USDC,
+  });
+
+  if (!tokenCode || tokenCode === '0x') {
+    throw new Error(
+      'No contract bytecode found at the configured USDC address. Deployment blocked.'
+    );
+  }
+
+  console.log('USDC contract bytecode: FOUND');
+
+  // Guard C: Confirm USDC decimals.
+
+  console.log('\nChecking USDC decimals...');
+
+  const tokenDecimals = await publicClient.readContract({
+    address: CELO_SEPOLIA_USDC,
+    abi: USDC_VALIDATION_ABI,
+    functionName: 'decimals',
+  });
+
+  if (Number(tokenDecimals) !== EXPECTED_USDC_DECIMALS) {
+    throw new Error(
+      `Unexpected USDC decimals: ${tokenDecimals}. Expected ${EXPECTED_USDC_DECIMALS}.`
+    );
+  }
+
+  console.log('USDC decimals verification: PASSED');
+
+  // Guard D: Confirm deployer has native CELO.
+
+  const balance = await publicClient.getBalance({
+    address: account.address,
+  });
+
+  console.log('\n--- Deployer Wallet ---');
+  console.log('Deployer Address:', account.address);
+  console.log('CELO Balance:    ', formatUnits(balance, 18), 'CELO');
 
   if (balance === 0n) {
     throw new Error(
-      `Deployer ${account.address} has 0 CELO balance on Celo Sepolia. Fund via faucet at https://faucet.celo.org first.`
+      'Deployer has zero CELO on Celo Sepolia. Deployment blocked.'
     );
   }
+
+  // ==========================================================
+  // STEP 7: EXPLICIT LIVE DEPLOYMENT
+  // ==========================================================
 
   const walletClient = createWalletClient({
     account,
@@ -202,31 +384,83 @@ async function main() {
     transport: http(CELO_SEPOLIA_RPC),
   });
 
-  console.log('\nBroadcasting deployment transaction to Celo Sepolia...');
+  console.log('\nAll pre-deployment checks passed.');
+  console.log('Submitting deployment transaction to Celo Sepolia...');
+
   const hash = await walletClient.deployContract({
     abi,
     bytecode,
     args: constructorArgs,
   });
 
-  console.log('Deployment Transaction Hash:', hash);
-  console.log('Waiting for receipt...');
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  console.log('\nDeployment transaction hash:', hash);
+  console.log('Waiting for transaction receipt...');
+
+  const receipt = await publicClient.waitForTransactionReceipt({
+    hash,
+  });
+
+  if (receipt.status !== 'success') {
+    throw new Error(
+      `Deployment transaction failed. Transaction hash: ${hash}`
+    );
+  }
+
+  if (!receipt.contractAddress) {
+    throw new Error(
+      'Transaction succeeded but no contract address was returned.'
+    );
+  }
+
+  // ==========================================================
+  // STEP 8: CONFIRM DEPLOYED CONTRACT
+  // ==========================================================
+
+  const deployedCode = await publicClient.getCode({
+    address: receipt.contractAddress,
+  });
+
+  if (!deployedCode || deployedCode === '0x') {
+    throw new Error(
+      'Deployment receipt returned an address, but no runtime bytecode was found.'
+    );
+  }
 
   console.log('\n===============================================================');
-  console.log('               DEPLOYMENT SUCCESSFUL!                          ');
+  console.log('                 DEPLOYMENT SUCCESSFUL');
   console.log('===============================================================');
   console.log('Contract Address:', receipt.contractAddress);
-  console.log('Block Number:    ', receipt.blockNumber);
+  console.log('Transaction Hash:', hash);
+  console.log('Block Number:    ', receipt.blockNumber.toString());
   console.log('Gas Used:        ', receipt.gasUsed.toString());
-  console.log('CeloScan URL:    ', `https://sepolia.celoscan.io/address/${receipt.contractAddress}`);
-  console.log('Blockscout URL:  ', `https://celo-sepolia.blockscout.com/address/${receipt.contractAddress}`);
-  console.log('---------------------------------------------------------------');
-  console.log(`Add to .env.local:\nNEXT_PUBLIC_DISBURSER_ADDRESS=${receipt.contractAddress}`);
-  console.log('===============================================================');
+  console.log(
+    'CeloScan:',
+    `https://sepolia.celoscan.io/address/${receipt.contractAddress}`
+  );
+  console.log(
+    'Blockscout:',
+    `https://celo-sepolia.blockscout.com/address/${receipt.contractAddress}`
+  );
+
+  console.log('\nAdd this address to your Sepolia environment configuration:');
+  console.log(
+    `NEXT_PUBLIC_DISBURSER_ADDRESS=${receipt.contractAddress}`
+  );
+  console.log('NEXT_PUBLIC_CHAIN_ID=11142220');
+
+  console.log('\nIMPORTANT:');
+  console.log('This address is for Celo Sepolia only.');
+  console.log('Do not use it as a Celo Mainnet deployment address.');
+  console.log('===============================================================\n');
 }
 
-main().catch((err) => {
-  console.error('\nDeployment error:', err.message || err);
-  process.exit(1);
+// ============================================================
+// ERROR HANDLING
+// ============================================================
+
+main().catch((error) => {
+  console.error('\nDeployment preparation/execution error:');
+  console.error(error.shortMessage || error.message || error);
+
+  process.exitCode = 1;
 });
