@@ -9,7 +9,8 @@ import {
   isDisburserConfigured,
   getDisburserAddressOrThrow,
 } from './disburser';
-import { CELO_SEPOLIA_USDC_ADDRESS, CELO_SEPOLIA_USDC } from './tokens';
+import { getUsdcTokenConfig } from './tokens';
+import { ALTANA_CELO_CONFIG } from './client';
 
 export interface PrepareDisburserExecutionPlanParams {
   mandateId?: `0x${string}`;
@@ -41,7 +42,7 @@ export function prepareDisburserExecutionPlan(
   });
 
   const isWithinSessionLimit = params.amountUSDC <= autonomousThreshold;
-  const rawAmount = parseUnits(params.amountUSDC.toString(), CELO_SEPOLIA_USDC.decimals);
+  const rawAmount = parseUnits(params.amountUSDC.toString(), getUsdcTokenConfig(ALTANA_CELO_CONFIG.chainId).decimals);
 
   return {
     call,
@@ -49,12 +50,12 @@ export function prepareDisburserExecutionPlan(
     vendorAddress: params.supplierAddress,
     amountFormatted: `$${params.amountUSDC.toLocaleString()} USDC`,
     rawAmount: rawAmount.toString(),
-    tokenAddress: CELO_SEPOLIA_USDC_ADDRESS,
+    tokenAddress: getUsdcTokenConfig(ALTANA_CELO_CONFIG.chainId).address,
     tokenSymbol: 'USDC',
-    tokenDecimals: 6,
+    tokenDecimals: getUsdcTokenConfig(ALTANA_CELO_CONFIG.chainId).decimals,
     isWithinSessionLimit,
     requiresOwnerSignature: !isWithinSessionLimit,
-    targetNetwork: 'Celo Sepolia (Chain ID 11142220)',
+    targetNetwork: `${ALTANA_CELO_CONFIG.chain.name} (Chain ID ${ALTANA_CELO_CONFIG.chainId})`,
   };
 }
 
@@ -149,7 +150,7 @@ export function prepareExecutionPlan(
     tokenDecimals: token.decimals,
     isWithinSessionLimit,
     requiresOwnerSignature: !isWithinSessionLimit,
-    targetNetwork: 'Celo Sepolia (Chain ID 11142220)',
+    targetNetwork: `${ALTANA_CELO_CONFIG.chain.name} (Chain ID ${ALTANA_CELO_CONFIG.chainId})`,
   };
 }
 

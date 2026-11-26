@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState } from 'react';
@@ -12,6 +13,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { AltanaWalletConfig } from '@/types';
+import { ALTANA_CELO_CONFIG } from '@/lib/altana/client';
 
 interface SettingsViewProps {
   walletConfig: AltanaWalletConfig;
@@ -27,34 +29,46 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [dailyAllowance, setDailyAllowance] = useState(walletConfig.dailyAllowance);
   const [autoApprovalThreshold, setAutoApprovalThreshold] = useState(walletConfig.autoApprovalThreshold);
   const [maxSingleTxLimit, setMaxSingleTxLimit] = useState(walletConfig.maxSingleTxLimit);
-  const selectedChainId = 11142220; // Celo Sepolia (Mainnet disabled)
+  const selectedChainId = ALTANA_CELO_CONFIG.chainId;
   const [aiAutonomy, setAiAutonomy] = useState('balanced');
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  const networkName =
+    selectedChainId === 42220 ? 'Celo Mainnet' : 'Celo Sepolia Testnet';
+
+  const rpcUrl =
+    selectedChainId === 42220
+      ? 'https://forno.celo.org'
+      : 'https://forno.celo-sepolia.celo-testnet.org';
+
+  const explorerUrl =
+    selectedChainId === 42220 ? 'https://celoscan.io' : 'https://sepolia.celoscan.io';
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+
     onUpdateWallet({
       ...walletConfig,
       dailyAllowance: Number(dailyAllowance),
       autoApprovalThreshold: Number(autoApprovalThreshold),
       maxSingleTxLimit: Number(maxSingleTxLimit),
-      chainId: Number(selectedChainId),
-      network: Number(selectedChainId) === 11142220 ? 'Celo Sepolia Testnet' : 'Celo Mainnet',
+      chainId: selectedChainId,
+      network: networkName,
     });
+
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
   };
 
   return (
     <div className="space-y-6 pb-12 max-w-4xl">
-      {/* Header */}
       <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl">
         <h3 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
           <Settings className="w-5 h-5 text-emerald-400" />
           <span>Platform & Policy Settings [Demo Mode]</span>
         </h3>
         <p className="text-xs text-slate-400 mt-1">
-          Manage Altana Agent Wallet smart contract constraints, Celo network parameters (Sepolia & Mainnet), and simulated RFQ preferences.
+          Manage Altana Agent Wallet smart contract constraints, Celo network parameters, and simulated RFQ preferences.
         </p>
       </div>
 
@@ -65,7 +79,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       )}
 
-      {/* Altana Spending Policy Form */}
       <form onSubmit={handleSave} className="space-y-6">
         <div className="rounded-2xl bg-slate-900 border border-slate-800 p-6 space-y-4">
           <div className="pb-3 border-b border-slate-800">
@@ -74,7 +87,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <span>Altana Agent Wallet Guardrails (Demo Simulation)</span>
             </h4>
             <p className="text-xs text-slate-400 mt-0.5">
-              Programmatic rules configured for smart account validation on Celo Sepolia / Mainnet
+              Programmatic rules configured for smart account validation on Celo.
             </p>
           </div>
 
@@ -126,7 +139,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
 
-        {/* Network & Blockchain Selection */}
         <div className="rounded-2xl bg-slate-900 border border-slate-800 p-6 space-y-4">
           <div className="pb-3 border-b border-slate-800">
             <h4 className="text-sm font-bold text-white flex items-center gap-2">
@@ -134,38 +146,47 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <span>Celo Network Configuration</span>
             </h4>
             <p className="text-xs text-slate-400 mt-0.5">
-              Select target Celo network for smart account verification
+              Active network selected by the application environment configuration.
             </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs text-slate-300">
-            <div
-              className="p-4 rounded-xl border bg-slate-950 border-emerald-500 ring-1 ring-emerald-500/30"
-            >
+            <div className="p-4 rounded-xl border bg-slate-950 border-emerald-500 ring-1 ring-emerald-500/30">
               <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-white">Celo Sepolia (Development Testnet)</span>
+                <span className="font-bold text-white">{networkName}</span>
                 <Check className="w-4 h-4 text-emerald-400" />
               </div>
-              <div className="text-[10px] font-mono text-emerald-400">Chain ID: 11142220 &bull; Active SDK Target</div>
-              <div className="text-[11px] text-slate-400 mt-1">RPC: https://forno.celo-sepolia.celo-testnet.org</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">Explorer: sepolia.celoscan.io</div>
+              <div className="text-[10px] font-mono text-emerald-400">
+                Chain ID: {selectedChainId} &bull; Active SDK Target
+              </div>
+              <div className="text-[11px] text-slate-400 mt-1">
+                RPC: {rpcUrl}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5">
+                Explorer: {explorerUrl}
+              </div>
             </div>
 
-            <div
-              className="p-4 rounded-xl border bg-slate-950/40 border-slate-800 opacity-60 cursor-not-allowed"
-            >
+            <div className="p-4 rounded-xl border bg-slate-950/40 border-slate-800">
               <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-slate-400">Celo Mainnet (Production)</span>
-                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">Disabled</span>
+                <span className="font-bold text-slate-300">Execution Status</span>
+                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-amber-950 text-amber-300">
+                  Protected
+                </span>
               </div>
-              <div className="text-[10px] font-mono text-slate-500">Chain ID: 42220</div>
-              <div className="text-[11px] text-slate-500 mt-1">Mainnet execution disabled during testnet phase</div>
-              <div className="text-[10px] text-slate-600 mt-0.5">Explorer: celoscan.io</div>
+              <div className="text-[10px] font-mono text-slate-400">
+                Live transactions: Disabled
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1">
+                Attribution safety gate remains active.
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5">
+                Mainnet deployment must be verified separately.
+              </div>
             </div>
           </div>
         </div>
 
-        {/* AI Autonomy & Preferences */}
         <div className="rounded-2xl bg-slate-900 border border-slate-800 p-6 space-y-4">
           <div className="pb-3 border-b border-slate-800">
             <h4 className="text-sm font-bold text-white flex items-center gap-2">
@@ -173,7 +194,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <span>Simulated RFQ Negotiation Profile</span>
             </h4>
             <p className="text-xs text-slate-400 mt-0.5">
-              Heuristic weighting for mock quotation scoring and supplier comparison
+              Heuristic weighting for mock quotation scoring and supplier comparison.
             </p>
           </div>
 
@@ -214,7 +235,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex items-center justify-between pt-2">
           <button
             type="button"

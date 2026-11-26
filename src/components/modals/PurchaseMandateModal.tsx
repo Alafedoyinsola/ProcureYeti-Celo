@@ -19,7 +19,7 @@ import { PurchaseRequest, Supplier, Quotation } from '@/types';
 import {
   deriveMandateId,
   buildCreateMandateCall,
-  PROCURE_YETI_DISBURSER_ADDRESS_CELO_SEPOLIA,
+  PROCURE_YETI_DISBURSER_ADDRESS,
 } from '@/lib/altana/disburser';
 import {
   runSentinelInvestigation,
@@ -104,21 +104,33 @@ export const PurchaseMandateModal: React.FC<PurchaseMandateModalProps> = ({
     }
   }, [expiryOption, nowSec]);
 
-  const supplierAddress: Address = (
+  const supplierAddress: Address | null =
     matchedSupplier?.walletAddress && isAddress(matchedSupplier.walletAddress)
       ? matchedSupplier.walletAddress
-      : '0x6370fd033278c143423d2f150d36e60b73770429'
-  ) as Address;
+      : null;
 
-  // Derive unique Mandate ID
-  const mandateId: `0x${string}` = useMemo(() => {
-    if (!request) return '0x0';
-    return deriveMandateId(request.id, supplierAddress);
+  // Derive a mandate ID only when a valid supplier wallet exists.
+  const mandateId: `0x${string}` = useMemo<`0x${string}`>(() => {
+    if (!request || !supplierAddress) {
+      return (`0x${'0'.repeat(64)}`) as `0x${string}`;
+    }
+
+    return deriveMandateId(request.id, supplierAddress) as `0x${string}`;
   }, [request, supplierAddress]);
 
-  // Build prepared contract call preview
+  // Build a preview only when all required addresses are configured and valid.
   const preparedCallPreview = useMemo(() => {
-    if (!request) return null;
+    const disburserAddress = PROCURE_YETI_DISBURSER_ADDRESS;
+
+    if (
+      !request ||
+      !supplierAddress ||
+      !disburserAddress ||
+      !isAddress(disburserAddress)
+    ) {
+      return null;
+    }
+
     try {
       return buildCreateMandateCall({
         mandateId,
@@ -126,13 +138,18 @@ export const PurchaseMandateModal: React.FC<PurchaseMandateModalProps> = ({
         maxAmountUSDC: currentMaxAmount,
         requisitionId: request.id,
         expiryTimestamp,
-        disburserAddress: PROCURE_YETI_DISBURSER_ADDRESS_CELO_SEPOLIA || '0xD15b805E8004081cE10c0eF62b2f2dC9fFDb7702',
+        disburserAddress,
       });
     } catch {
       return null;
     }
-  }, [request, mandateId, supplierAddress, currentMaxAmount, expiryTimestamp]);
-
+  }, [
+    request,
+    mandateId,
+    supplierAddress,
+    currentMaxAmount,
+    expiryTimestamp,
+  ]);
   // Validation rules
   const validationErrors: string[] = useMemo(() => {
     const errors: string[] = [];
@@ -176,38 +193,44 @@ export const PurchaseMandateModal: React.FC<PurchaseMandateModalProps> = ({
   };
 
   const handleExecuteAction = (action: DecisionAction) => {
+    if (
+      action === 'approve_and_generate_mandate' &&
+      (!supplierAddress || !preparedCallPreview)
+    ) {
+      return;
+    }
+
     setActionInProgress(action);
 
-    const receipt = createDecisionReceipt({
-      requisitionId: request.id,
-      action,
-      decisionMaker: 'Elena Vance (Owner)',
-      mandateId: action === 'approve_and_generate_mandate' ? mandateId : undefined,
-      maxAuthorisedUSDC: action === 'approve_and_generate_mandate' ? currentMaxAmount : undefined,
-      supplierAddress: action === 'approve_and_generate_mandate' ? supplierAddress : undefined,
-      clarificationNote: action === 'request_clarification' ? clarificationText : undefined,
-      rejectionReason: action === 'reject' ? rejectionReason : undefined,
-      triggeredRules: investigation.ruleEvaluations.filter((r) => !r.passed).map((r) => r.ruleId),
-    });
-
-    setGeneratedReceipt(receipt);
-
-    onCommitDecision(
-      receipt,
+    const approvalData =
       action === 'approve_and_generate_mandate'
         ? {
             mandateId,
             maxAmount: currentMaxAmount,
             expiry: new Date(expiryTimestamp * 1000).toISOString(),
-            supplierAddress,
+            supplierAddress: supplierAddress as Address,
           }
-        : undefined
-    );
+        : undefined;
 
+    const receipt = createDecisionReceipt({
+      requisitionId: request.id,
+      action,
+      decisionMaker: 'Elena Vance (Owner)',
+      mandateId: approvalData ? mandateId : undefined,
+      maxAuthorisedUSDC: approvalData ? currentMaxAmount : undefined,
+      supplierAddress: approvalData?.supplierAddress,
+      clarificationNote: action === 'request_clarification' ? clarificationText : undefined,
+      rejectionReason: action === 'reject' ? rejectionReason : undefined,
+      triggeredRules: investigation.ruleEvaluations
+        .filter((r) => !r.passed)
+        .map((r) => r.ruleId),
+    });
+
+    setGeneratedReceipt(receipt);
+    onCommitDecision(receipt, approvalData);
     setActiveTab('receipt');
     setActionInProgress(null);
   };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl text-slate-200 overflow-hidden">
@@ -476,7 +499,7 @@ export const PurchaseMandateModal: React.FC<PurchaseMandateModalProps> = ({
                   <div className="text-slate-500">{'// ProcureYetiDisburser.createMandate:'}</div>
                   <div>
                     <span className="text-amber-400">target:</span>{' '}
-                    <span>{PROCURE_YETI_DISBURSER_ADDRESS_CELO_SEPOLIA || '0xD15b805E8004081cE10c0eF62b2f2dC9fFDb7702'}</span>
+                    <span>{PROCURE_YETI_DISBURSER_ADDRESS || 'Not configured'}</span>
                   </div>
                   <div>
                     <span className="text-amber-400">signature:</span>{' '}

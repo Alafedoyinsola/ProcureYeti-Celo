@@ -1,27 +1,27 @@
 /**
  * Celo ERC-8021 Hackathon Attribution & Relay Safety Gate
  *
- * Hackathon Bounty: Agents Open for Business — Track 4: Agent Wallets | Altana
- * Attribution Tag:  celo_43f4a9848a4b
- * Target Chains:    Celo Mainnet (42220) / Celo Sepolia (11142220)
+ * Track: Agents Open for Business — Track 4: Agent Wallets | Altana
+ * Attribution code: celo_43f4a9848a4b
+ * Chains: Celo Mainnet (42220) / Celo Sepolia (11142220)
  *
- * TECHNICAL INVESTIGATION FINDINGS:
- * --------------------------------
- * 1. Celo's official attribution verification library (@celo/attribution-tags / ERC-8021)
- *    inspects the calldata of the outermost transaction envelope submitted to Celo.
- * 2. Altana SDK v1.1.0 bundles agent calls (`client.execute({ session, calls })`) into
- *    an Ithaca Porto / EIP-7702 delegated relay UserOp format.
- * 3. In this architecture, appending the attribution suffix `celo_43f4a9848a4b` to an inner
- *    call's calldata (e.g. inside `disburseWithMandate`) does NOT place the suffix at the end
- *    of the outermost transaction envelope submitted by the Altana relayer.
- * 4. Consequently, Celo's official `verifyTx` fails to detect attribution on Porto/7702 relay transactions.
+ * VERIFIER FINDINGS:
+ * - @celo/attribution-tags supports receipt-aware Orchestrator intent
+ *   verification through verifyIntents() and verifyTx().
+ * - It checks successful transaction receipts and matching IntentExecuted
+ *   events, including sender and nonce.
+ * - It also supports receipt-aware ERC-4337 UserOperation verification.
+ * - Therefore, inner intent calldata attribution is not inherently invisible
+ *   to the Celo verifier.
+ *
+ * REMAINING BLOCKER:
+ * Altana SDK 1.2.0's prepareTaggedIntent() catches tagged preparation errors
+ * and retries with untagged calls when untaggedCalls is supplied.
+ * No supported fail-closed option has been established.
  *
  * SAFETY INVARIANT:
- * ----------------
- * To prevent broadcasting uncredited mainnet transactions or spending funds without valid hackathon
- * attribution, live transaction broadcast is systematically gated until either:
- * - Altana SDK supports outer-envelope relay attribution tagging, OR
- * - Celo's attribution verifier adds support for EIP-7702 inner execution tracing.
+ * Live execution remains blocked until attribution fallback is controlled
+ * and a real qualifying transaction is independently verified.
  */
 
 export const HACKATHON_ATTRIBUTION_TAG = 'celo_43f4a9848a4b';
@@ -29,8 +29,7 @@ export const CELO_MAINNET_CHAIN_ID = 42220;
 export const CELO_SEPOLIA_CHAIN_ID = 11142220;
 
 export type AttributionGateStatus =
-  | 'gated_relay_incompatible'
-  | 'verified_outer_envelope'
+  | 'gated_attribution_not_guaranteed'
   | 'demo_simulation';
 
 export class AttributionGateError extends Error {
@@ -39,7 +38,7 @@ export class AttributionGateError extends Error {
 
   constructor(
     message: string,
-    status: AttributionGateStatus = 'gated_relay_incompatible',
+    status: AttributionGateStatus = 'gated_attribution_not_guaranteed',
     targetChainId: number = CELO_MAINNET_CHAIN_ID
   ) {
     super(message);
@@ -54,7 +53,7 @@ export interface AttributionInvestigationReport {
   tag: string;
   targetChainId: number;
   relayType: 'Ithaca Porto / EIP-7702 Relayer';
-  verifierMethod: 'ERC-8021 Outermost Calldata Inspection';
+  verifierMethod: 'Receipt-aware Orchestrator and ERC-4337 execution verification';
   status: AttributionGateStatus;
   isExecutionGated: boolean;
   isLiveExecutionBlocked: boolean;
@@ -62,11 +61,6 @@ export interface AttributionInvestigationReport {
   safestAction: string;
 }
 
-/**
- * Returns the current ERC-8021 attribution and relay safety report.
- * Guaranteed to return `status: 'gated_relay_incompatible'` and `isExecutionGated: true`
- * while Altana SDK v1.1.0 lacks outer-envelope calldata tagging support.
- */
 export function getAttributionReport(
   chainId: number = CELO_MAINNET_CHAIN_ID
 ): AttributionInvestigationReport {
@@ -74,57 +68,47 @@ export function getAttributionReport(
     tag: HACKATHON_ATTRIBUTION_TAG,
     targetChainId: chainId,
     relayType: 'Ithaca Porto / EIP-7702 Relayer',
-    verifierMethod: 'ERC-8021 Outermost Calldata Inspection',
-    status: 'gated_relay_incompatible',
+    verifierMethod:
+      'Receipt-aware Orchestrator and ERC-4337 execution verification',
+    status: 'gated_attribution_not_guaranteed',
     isExecutionGated: true,
     isLiveExecutionBlocked: true,
     blockerReason:
-      'Altana SDK v1.1.0 bundles calls through Ithaca Porto EIP-7702 relay. The Celo ERC-8021 verifyTx parses outer transaction envelope calldata only, failing to detect inner call attribution suffixes.',
+      'The Celo verifier supports receipt-aware verification of ERC-8021 attribution in Altana Orchestrator intents. However, Altana SDK 1.2.0 uses the Ithaca Porto / EIP-7702 relay path and retries tagged intent preparation with untagged calls after preparation errors. Until that fallback can be controlled and a real qualifying transaction is independently verified, attribution cannot be guaranteed.',
     safestAction:
-      'Execution gate is actively engaged. No live funds are spent without verified hackathon attribution. Prepared execution plans and signed mandates are saved with complete cryptographic audit receipts.',
+      'No live funds are spent while this gate is active. Keep live execution blocked. Use mocked RPC tests for verifier integration, retain audit evidence, and do not treat a configured tag or simulated receipt as proof of a qualifying on-chain transaction.',
   };
 }
 
-/**
- * Checks whether live transaction broadcast is permitted.
- * Always returns `false` while the execution gate is engaged.
- */
-export function isLiveExecutionAllowed(chainId: number = CELO_MAINNET_CHAIN_ID): boolean {
+export function isLiveExecutionAllowed(
+  chainId: number = CELO_MAINNET_CHAIN_ID
+): boolean {
+  void chainId;
+  return false;
+}
+
+export function assertExecutionAllowed(
+  chainId: number = CELO_MAINNET_CHAIN_ID
+): void {
   const report = getAttributionReport(chainId);
-  return !report.isExecutionGated && report.status === 'verified_outer_envelope';
+
+  throw new AttributionGateError(
+    `Live execution blocked by attribution safety gate: ${report.blockerReason} Status: ${report.status}.`,
+    report.status,
+    chainId
+  );
 }
 
-/**
- * Asserts that live execution is allowed before initiating any relay broadcast.
- * Throws `AttributionGateError` whenever attribution cannot be verified on the outer envelope.
- */
-export function assertExecutionAllowed(chainId: number = CELO_MAINNET_CHAIN_ID): void {
-  if (!isLiveExecutionAllowed(chainId)) {
-    const report = getAttributionReport(chainId);
-    throw new AttributionGateError(
-      `Live execution blocked by attribution safety gate: ${report.blockerReason} Status: ${report.status}.`,
-      report.status,
-      chainId
-    );
-  }
-}
-
-/**
- * Invariant: The configured attribution tag string is NEVER proof of a qualifying transaction.
- * A qualifying transaction requires confirmed on-chain outer-envelope calldata verified by @celo/attribution-tags.
- * A static configuration string or metadata label does NOT constitute proof.
- */
+/** A configured tag alone is never proof of a qualifying transaction. */
 export function isTagProofOfQualifyingTransaction(tag?: string): boolean {
   void tag;
   return false;
 }
 
-/**
- * Invariant: Inner calldata tagging cannot override the execution gate.
- * Even if an inner call payload appends the attribution tag or suffix, the outer relayer envelope
- * will bury the suffix inside ABI-encoded UserOp payload, causing outer verification to fail.
- */
-export function canInnerCalldataTagOverrideGate(innerCalldata?: string): boolean {
+/** Inner calldata alone can never override the application execution gate. */
+export function canInnerCalldataTagOverrideGate(
+  innerCalldata?: string
+): boolean {
   void innerCalldata;
   return false;
 }
@@ -141,13 +125,9 @@ export const GUARDED_BROADCAST_METHODS = [
   'approveTokenForPermit2',
 ] as const;
 
-export type GuardedBroadcastMethod = (typeof GUARDED_BROADCAST_METHODS)[number];
+export type GuardedBroadcastMethod =
+  (typeof GUARDED_BROADCAST_METHODS)[number];
 
-/**
- * Wraps any client object (e.g. Altana SDK client) with an active Attribution & Relay Safety Gate proxy.
- * Any invocation of a live transaction broadcast method is intercepted and blocked by `assertExecutionAllowed`.
- * Safe read queries, gas quotes, and offline preparation pass through unhindered.
- */
 export function wrapWithAttributionGate<T extends object>(
   client: T,
   chainId: number = CELO_MAINNET_CHAIN_ID
@@ -160,17 +140,22 @@ export function wrapWithAttributionGate<T extends object>(
         return function guardedBroadcastMethod(...args: unknown[]) {
           void args;
           assertExecutionAllowed(chainId);
-          const method = (target as Record<string, (...a: unknown[]) => unknown>)[prop];
+
+          const method =
+            (target as Record<string, (...a: unknown[]) => unknown>)[prop];
+
           if (typeof method === 'function') {
             return method.apply(target, args);
           }
+
           throw new AttributionGateError(
             `Broadcast method ${prop} is blocked by attribution safety gate.`,
-            'gated_relay_incompatible',
+            'gated_attribution_not_guaranteed',
             chainId
           );
         };
       }
+
       return Reflect.get(target, prop, receiver);
     },
   });
@@ -189,26 +174,22 @@ export interface ExecutionSafetyEvaluation {
   safestAction: string;
 }
 
-/**
- * Validates the full execution safety posture before preparing or handling transactions.
- */
 export function validateExecutionSafety(params?: {
   innerCalldata?: string;
   chainId?: number;
 }): ExecutionSafetyEvaluation {
   const chainId = params?.chainId ?? CELO_MAINNET_CHAIN_ID;
   const report = getAttributionReport(chainId);
-  const allowed = isLiveExecutionAllowed(chainId);
-  const innerOverrides = canInnerCalldataTagOverrideGate(params?.innerCalldata);
-  const qualifyingProof = isTagProofOfQualifyingTransaction(report.tag);
 
   return {
-    allowed,
+    allowed: false,
     status: report.status,
-    isExecutionGated: report.isExecutionGated,
-    isLiveExecutionBlocked: report.isLiveExecutionBlocked,
-    isQualifyingProof: qualifyingProof,
-    innerCalldataOverridesGate: innerOverrides,
+    isExecutionGated: true,
+    isLiveExecutionBlocked: true,
+    isQualifyingProof: isTagProofOfQualifyingTransaction(report.tag),
+    innerCalldataOverridesGate: canInnerCalldataTagOverrideGate(
+      params?.innerCalldata
+    ),
     tag: report.tag,
     targetChainId: chainId,
     blockerReason: report.blockerReason,

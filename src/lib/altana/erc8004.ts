@@ -3,6 +3,8 @@ import {
   buildErc8004RegisterCall,
   buildErc8004SetAgentUriCall,
   erc8004RegisterPermissions,
+  encodeErc8004AgentUri,
+  withErc8004Registration,
   type Erc8004RegistrationFile,
   type Erc8004MetadataEntry,
   type Call,
@@ -20,49 +22,66 @@ import { assertExecutionAllowed } from './attribution';
 export const CELO_SEPOLIA_ERC8004_REGISTRY: Address = erc8004Registry(ALTANA_CELO_CONFIG.chainId);
 
 /**
- * Generates standard ERC-8004 registration metadata JSON for the ProcureYeti agent.
+ * Returns the canonical ERC-8004 registry address for the specified chain.
+ * Defaults to the active Celo configuration.
  */
-export function buildProcureYetiAgentMetadata(params: {
+export function getErc8004RegistryAddress(chainId: number = ALTANA_CELO_CONFIG.chainId): Address {
+  return erc8004Registry(chainId);
+}
+
+/**
+ * Generates standard ERC-8004 registration metadata JSON for the ProcureYeti agent.
+ *
+ * SAFETY & SCHEMA INVARIANTS:
+ * 1. Initial registration leaves `registrations: []` empty: an un-minted token cannot claim an Agent ID.
+ * 2. Unverified or non-functional placeholder domain endpoints and images are strictly omitted.
+ * 3. Preserves official agent name and accurate project description.
+ */
+export function buildProcureYetiAgentMetadata(params?: {
   agentName?: string;
   agentDescription?: string;
-  smartAccountAddress: Address;
+  smartAccountAddress?: Address;
 }): Erc8004RegistrationFile {
   const {
     agentName = 'ProcureYeti Autonomous Procurement Agent',
     agentDescription = 'Autonomous AI procurement agent governed by Altana Agent Wallets on Celo.',
-  } = params;
+  } = params || {};
 
   return {
     type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
     name: agentName,
     description: agentDescription,
-    image: 'https://procureyeti.io/icon.png',
-    services: [
-      {
-        name: 'procurement-rfq',
-        endpoint: 'https://procureyeti.io/api/agent/rfq',
-        version: '1.0.0',
-      },
-      {
-        name: 'spending-policy-checker',
-        endpoint: 'https://procureyeti.io/api/agent/policy',
-        version: '1.0.0',
-      },
-    ],
-    registrations: [
-      {
-        agentId: 0, // Populated after Phase 1 mint
-        agentRegistry: `eip155:${ALTANA_CELO_CONFIG.chainId}:${CELO_SEPOLIA_ERC8004_REGISTRY}`,
-      },
-    ],
+    services: [],
+    registrations: [],
   };
 }
+
+/**
+ * Patches the minted on-chain Agent ID into the registration metadata using SDK's `withErc8004Registration`.
+ * Used in Phase 2 to prepare the URI update after the ERC-721 token has minted.
+ */
+export function patchProcureYetiAgentId(
+  file: Erc8004RegistrationFile,
+  agentId: number | bigint,
+  chainId: number = ALTANA_CELO_CONFIG.chainId
+): Erc8004RegistrationFile {
+  return withErc8004Registration(file, BigInt(agentId), chainId);
+}
+
+/**
+ * Encodes an ERC-8004 registration metadata object to a Base64 data URI using the SDK encoder.
+ */
+export function encodeProcureYetiAgentUri(file: Erc8004RegistrationFile): string {
+  return encodeErc8004AgentUri(file);
+}
+
+export { encodeErc8004AgentUri, withErc8004Registration };
 
 /**
  * Prepares the ERC-8004 Phase 1 registration call without broadcasting.
  *
  * 2-Phase Registration Workflow:
- * 1. Phase 1 (Mint): Call `buildErc8004RegisterCall` with empty registrations.
+ * 1. Phase 1 (Mint): Call `buildErc8004RegisterCall` with empty registrations (`registrations: []`).
  *    The contract mints an ERC-721 token and emits a Registered(agentId, owner) event.
  * 2. Phase 2 (URI Patch): The minted agentId is retrieved from logs and patched into the
  *    registration file via `buildErc8004SetAgentUriCall(chainId, agentId, completedURI)`.
@@ -70,22 +89,25 @@ export function buildProcureYetiAgentMetadata(params: {
 export function prepareErc8004RegistrationCall(params: {
   agentUri: string;
   metadata?: readonly Erc8004MetadataEntry[];
+  chainId?: number;
 }): {
   registryAddress: Address;
   call: Call;
   twoPhaseWorkflowDescription: string;
 } {
+  const chainId = params.chainId ?? ALTANA_CELO_CONFIG.chainId;
+  const registryAddress = erc8004Registry(chainId);
   const call = buildErc8004RegisterCall(
-    ALTANA_CELO_CONFIG.chainId,
+    chainId,
     params.agentUri,
     params.metadata
   );
 
   return {
-    registryAddress: CELO_SEPOLIA_ERC8004_REGISTRY,
+    registryAddress,
     call,
     twoPhaseWorkflowDescription:
-      'Phase 1: Mints ERC-721 token to smart account. Phase 2: Patches agentId into URI via setAgentURI.',
+      'Phase 1: Mints ERC-721 token to smart account with registrations: []. Phase 2: Patches agentId into URI via setAgentURI.',
   };
 }
 
@@ -95,18 +117,21 @@ export function prepareErc8004RegistrationCall(params: {
 export function prepareErc8004SetAgentUriCall(params: {
   agentId: number | bigint;
   agentUri: string;
+  chainId?: number;
 }): {
   registryAddress: Address;
   call: Call;
 } {
+  const chainId = params.chainId ?? ALTANA_CELO_CONFIG.chainId;
+  const registryAddress = erc8004Registry(chainId);
   const call = buildErc8004SetAgentUriCall(
-    ALTANA_CELO_CONFIG.chainId,
+    chainId,
     BigInt(params.agentId),
     params.agentUri
   );
 
   return {
-    registryAddress: CELO_SEPOLIA_ERC8004_REGISTRY,
+    registryAddress,
     call,
   };
 }
@@ -116,8 +141,10 @@ export function prepareErc8004SetAgentUriCall(params: {
  * Strictly scopes permissions to `register(string,(string,bytes)[])` and `setAgentURI(uint256,string)` selectors,
  * preventing any unauthorized NFT transfers or permission escalation.
  */
-export function getErc8004SessionPermissions(): readonly CallPermission[] {
-  return erc8004RegisterPermissions(ALTANA_CELO_CONFIG.chainId);
+export function getErc8004SessionPermissions(
+  chainId: number = ALTANA_CELO_CONFIG.chainId
+): readonly CallPermission[] {
+  return erc8004RegisterPermissions(chainId);
 }
 
 /**

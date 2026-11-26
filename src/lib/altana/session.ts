@@ -7,11 +7,15 @@ import type {
 } from '@altananetwork/sdk';
 import { ALTANA_CELO_CONFIG } from './client';
 import {
+  CELO_MAINNET_USDC,
+  CELO_MAINNET_CUSD,
+  CELO_MAINNET_CUSD_ADDRESS,
   CELO_SEPOLIA_USDC,
   CELO_SEPOLIA_USDC_ADDRESS,
   CELO_SEPOLIA_CUSD,
   CELO_SEPOLIA_CUSD_ADDRESS,
   DEFAULT_PROCUREMENT_TOKEN,
+  getUsdcTokenConfig,
   type TokenConfig,
 } from './tokens';
 
@@ -48,14 +52,24 @@ export interface ProcurementSessionParams {
  */
 export function resolveTokenConfig(token?: TokenConfig, tokenAddress?: Address): TokenConfig {
   if (token) return token;
+
+  const activeUsdc = getUsdcTokenConfig(ALTANA_CELO_CONFIG.chainId);
+
   if (tokenAddress) {
-    if (tokenAddress.toLowerCase() === CELO_SEPOLIA_CUSD_ADDRESS.toLowerCase()) {
-      return CELO_SEPOLIA_CUSD;
-    }
-    if (tokenAddress.toLowerCase() === CELO_SEPOLIA_USDC_ADDRESS.toLowerCase()) {
-      return CELO_SEPOLIA_USDC;
-    }
-    // Custom token fallback, defaulting to 18 decimals if unknown
+    const normalized = tokenAddress.toLowerCase();
+    const knownTokens = [
+      CELO_MAINNET_USDC,
+      CELO_MAINNET_CUSD,
+      CELO_SEPOLIA_USDC,
+      CELO_SEPOLIA_CUSD,
+    ];
+
+    const knownToken = knownTokens.find(
+      (candidate) => candidate.address.toLowerCase() === normalized
+    );
+
+    if (knownToken) return knownToken;
+
     return {
       address: tokenAddress,
       symbol: 'TOKEN',
@@ -63,7 +77,8 @@ export function resolveTokenConfig(token?: TokenConfig, tokenAddress?: Address):
       decimals: 18,
     };
   }
-  return DEFAULT_PROCUREMENT_TOKEN;
+
+  return activeUsdc;
 }
 
 /**
@@ -87,14 +102,14 @@ import {
   buildDisburserSessionPermissions,
   isDisburserConfigured,
   getDisburserAddressOrThrow,
-  PROCURE_YETI_DISBURSER_ADDRESS_CELO_SEPOLIA,
+  PROCURE_YETI_DISBURSER_ADDRESS,
 } from './disburser';
 
 export {
   buildDisburserSessionPermissions,
   isDisburserConfigured,
   getDisburserAddressOrThrow,
-  PROCURE_YETI_DISBURSER_ADDRESS_CELO_SEPOLIA,
+  PROCURE_YETI_DISBURSER_ADDRESS,
 };
 
 /**
@@ -167,11 +182,12 @@ export function prepareSessionDraft(params: ProcurementSessionParams): PreparedS
   const dailyLimit = params.dailySpendingLimit ?? params.dailySpendingLimitCUSD ?? 500;
 
   if (isDisburserConfigured()) {
+    const disburserToken = getUsdcTokenConfig(ALTANA_CELO_CONFIG.chainId);
     const { permissions, expiry, disburserAddress } = buildDisburserSessionPermissions({
       dailySpendingLimitUSDC: dailyLimit,
       expirySeconds: params.expirySeconds,
     });
-    const rawLimit = parseUnits(dailyLimit.toString(), 6);
+    const rawLimit = parseUnits(dailyLimit.toString(), token.decimals);
     return {
       network: ALTANA_CELO_CONFIG.chain.name,
       chainId: ALTANA_CELO_CONFIG.chainId,
@@ -179,9 +195,9 @@ export function prepareSessionDraft(params: ProcurementSessionParams): PreparedS
       allowedVendorAddresses: params.allowedVendorAddresses,
       dailySpendLimit: `$${dailyLimit.toLocaleString()} USDC`,
       rawSpendLimit: rawLimit.toString(),
-      tokenAddress: CELO_SEPOLIA_USDC_ADDRESS,
+      tokenAddress: token.address,
       tokenSymbol: 'USDC',
-      tokenDecimals: 6,
+      tokenDecimals: token.decimals,
       expiryDate: new Date(expiry * 1000).toISOString(),
       permissions,
       requiresOwnerSignature: true,

@@ -1,6 +1,7 @@
 import { encodeFunctionData, parseUnits, keccak256, encodePacked, type Address } from 'viem';
 import type { Call, CallPermission, SpendPermission, SessionPermissions } from '@altananetwork/sdk';
-import { CELO_SEPOLIA_USDC_ADDRESS, CELO_SEPOLIA_USDC } from './tokens';
+import { getUsdcTokenConfig } from './tokens';
+import { ALTANA_CELO_CONFIG } from './client';
 
 /**
  * Verified ProcureYetiDisburser Contract Interface and ABI on Celo
@@ -14,19 +15,19 @@ import { CELO_SEPOLIA_USDC_ADDRESS, CELO_SEPOLIA_USDC } from './tokens';
  * Returns null if NEXT_PUBLIC_DISBURSER_ADDRESS is not set.
  * No hardcoded fallback is used to prevent sending transactions to unverified addresses.
  */
-export const PROCURE_YETI_DISBURSER_ADDRESS_CELO_SEPOLIA: Address | null =
+export const PROCURE_YETI_DISBURSER_ADDRESS: Address | null =
   (process.env.NEXT_PUBLIC_DISBURSER_ADDRESS as Address) || null;
 
 export function isDisburserConfigured(): boolean {
   return Boolean(
-    PROCURE_YETI_DISBURSER_ADDRESS_CELO_SEPOLIA &&
-      PROCURE_YETI_DISBURSER_ADDRESS_CELO_SEPOLIA.startsWith('0x') &&
-      PROCURE_YETI_DISBURSER_ADDRESS_CELO_SEPOLIA.length === 42
+    PROCURE_YETI_DISBURSER_ADDRESS &&
+      PROCURE_YETI_DISBURSER_ADDRESS.startsWith('0x') &&
+      PROCURE_YETI_DISBURSER_ADDRESS.length === 42
   );
 }
 
 export function getDisburserAddressOrThrow(override?: Address): Address {
-  const address = override || PROCURE_YETI_DISBURSER_ADDRESS_CELO_SEPOLIA;
+  const address = override || PROCURE_YETI_DISBURSER_ADDRESS;
   if (!address || !address.startsWith('0x') || address.length !== 42) {
     throw new Error(
       'ProcureYetiDisburser is not deployed on Celo. Configure NEXT_PUBLIC_DISBURSER_ADDRESS in .env.local after verified deployment.'
@@ -372,7 +373,7 @@ export function buildMandatePaymentCall(params: PrepareMandatePaymentParams): Ca
   } = params;
 
   const targetAddress = getDisburserAddressOrThrow(disburserAddress);
-  const rawAmount = parseUnits(amountUSDC.toString(), CELO_SEPOLIA_USDC.decimals);
+  const rawAmount = parseUnits(amountUSDC.toString(), getUsdcTokenConfig(ALTANA_CELO_CONFIG.chainId).decimals);
 
   const data = encodeFunctionData({
     abi: PROCURE_YETI_DISBURSER_ABI,
@@ -412,7 +413,7 @@ export function buildCreateMandateCall(params: PrepareCreateMandateParams): Call
   } = params;
 
   const targetAddress = getDisburserAddressOrThrow(disburserAddress);
-  const rawAmount = parseUnits(maxAmountUSDC.toString(), CELO_SEPOLIA_USDC.decimals);
+  const rawAmount = parseUnits(maxAmountUSDC.toString(), getUsdcTokenConfig(ALTANA_CELO_CONFIG.chainId).decimals);
   const expiry = expiryTimestamp || Math.floor(Date.now() / 1000) + expirySeconds;
 
   const data = encodeFunctionData({
@@ -473,7 +474,7 @@ export function buildDisburserPaymentCall(params: PrepareDisburserPaymentParams)
   } = params;
 
   const targetAddress = getDisburserAddressOrThrow(disburserAddress);
-  const rawAmount = parseUnits(amountUSDC.toString(), CELO_SEPOLIA_USDC.decimals);
+  const rawAmount = parseUnits(amountUSDC.toString(), getUsdcTokenConfig(ALTANA_CELO_CONFIG.chainId).decimals);
 
   const data = encodeFunctionData({
     abi: PROCURE_YETI_DISBURSER_ABI,
@@ -533,12 +534,12 @@ export function buildDisburserSessionPermissions(
     },
   ];
 
-  const rawUsdcLimit = parseUnits(dailySpendingLimitUSDC.toString(), CELO_SEPOLIA_USDC.decimals);
+  const rawUsdcLimit = parseUnits(dailySpendingLimitUSDC.toString(), getUsdcTokenConfig(ALTANA_CELO_CONFIG.chainId).decimals);
   const rawNativeGasLimit = parseUnits(nativeGasLimitCELO.toString(), 18);
 
   const spend: SpendPermission[] = [
     {
-      token: CELO_SEPOLIA_USDC_ADDRESS,
+      token: getUsdcTokenConfig(ALTANA_CELO_CONFIG.chainId).address,
       limit: rawUsdcLimit,
       period: 'day',
     },

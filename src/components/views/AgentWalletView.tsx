@@ -22,7 +22,9 @@ import {
   CELO_SEPOLIA_ERC8004_REGISTRY,
   CELO_SEPOLIA_USDC_ADDRESS,
   CELO_SEPOLIA_CUSD_ADDRESS,
-  PROCURE_YETI_DISBURSER_ADDRESS_CELO_SEPOLIA,
+  CELO_MAINNET_CUSD_ADDRESS,
+  getUsdcTokenConfig,
+  PROCURE_YETI_DISBURSER_ADDRESS,
   AltanaConnectionStatus,
   getAttributionReport,
   HACKATHON_ATTRIBUTION_TAG,
@@ -38,6 +40,19 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
   onUpdatePolicy,
 }) => {
   const attributionReport = getAttributionReport(ALTANA_CELO_CONFIG.chainId);
+  const activeUsdc = getUsdcTokenConfig(ALTANA_CELO_CONFIG.chainId);
+  const activeCusdAddress =
+    ALTANA_CELO_CONFIG.chainId === 42220
+      ? CELO_MAINNET_CUSD_ADDRESS
+      : CELO_SEPOLIA_CUSD_ADDRESS;
+  const explorerBaseUrl =
+    ALTANA_CELO_CONFIG.chainId === 42220
+      ? 'https://celoscan.io'
+      : 'https://sepolia.celoscan.io';
+  const erc8004Registry =
+    ALTANA_CELO_CONFIG.chainId === 11142220
+      ? CELO_SEPOLIA_ERC8004_REGISTRY
+      : null;
   const [connectionStatus, setConnectionStatus] = useState<AltanaConnectionStatus>('demo');
   const [copiedAgent, setCopiedAgent] = useState(false);
   const [copiedOwner, setCopiedOwner] = useState(false);
@@ -77,23 +92,23 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
           <div className="space-y-1">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-semibold">
               <Shield className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Official Altana SDK Architecture &bull; Celo Sepolia</span>
+              <span>Official Altana SDK Architecture &bull; {ALTANA_CELO_CONFIG.chain.name}</span>
             </div>
             <h3 className="text-xl font-bold text-white tracking-tight">
               Altana Agent Wallet & ERC-8004 Registry
             </h3>
             <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
-              Equipped with <strong>@altananetwork/sdk</strong> and native <strong>CELO_SEPOLIA</strong> support.
+              Equipped with <strong>@altananetwork/sdk</strong> and active Celo network support.
               Programmatic spending caps and contract allowlists are anchored in the on-chain KeyStore registry.
             </p>
           </div>
 
           <div className="flex flex-col sm:items-end gap-1.5">
             <span className="text-xs font-mono text-emerald-400 bg-emerald-950/80 px-3 py-1.5 rounded-xl border border-emerald-500/30">
-              Chain: CELO_SEPOLIA (#11142220)
+              Chain: {ALTANA_CELO_CONFIG.chain.name} (#{ALTANA_CELO_CONFIG.chainId})
             </span>
             <span className="text-[11px] font-mono text-slate-500">
-              Celo Mainnet: Disabled in current phase
+              Live transactions: Disabled
             </span>
           </div>
         </div>
@@ -128,9 +143,9 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
               {connectionStatus === 'demo' &&
                 'Operating with simulated mock keys. No real private keys or wallet extensions are requested.'}
               {connectionStatus === 'disconnected' &&
-                'Altana SDK initialized with CELO_SEPOLIA config. Connect an owner signer to grant live sessions.'}
+                'Altana SDK initialized for {ALTANA_CELO_CONFIG.chain.name}. Live transactions remain disabled.'}
               {connectionStatus === 'connected' &&
-                'Altana client instantiated. KeyStore and Relay endpoints active for Celo Sepolia.'}
+                'Altana client instantiated for {ALTANA_CELO_CONFIG.chain.name}. Live transactions remain disabled.'}
             </p>
           </div>
         </div>
@@ -197,12 +212,12 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
 
           <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-400 space-y-1">
             <div className="flex justify-between">
-              <span>Verified USDC (6 dec):</span>
-              <span className="font-mono text-emerald-400">{CELO_SEPOLIA_USDC_ADDRESS.slice(0, 6)}...{CELO_SEPOLIA_USDC_ADDRESS.slice(-4)}</span>
+              <span>Active USDC:</span>
+              <span className="font-mono text-emerald-400">{activeUsdc.address.slice(0, 6)}...{activeUsdc.address.slice(-4)}</span>
             </div>
             <div className="flex justify-between">
               <span>Verified cUSD (18 dec):</span>
-              <span className="font-mono text-slate-300">{CELO_SEPOLIA_CUSD_ADDRESS.slice(0, 6)}...{CELO_SEPOLIA_CUSD_ADDRESS.slice(-4)}</span>
+              <span className="font-mono text-slate-300">{activeCusdAddress.slice(0, 6)}...{activeCusdAddress.slice(-4)}</span>
             </div>
           </div>
         </div>
@@ -301,7 +316,7 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
           <div className="flex items-center gap-2">
             <FileCode2 className="w-4 h-4 text-emerald-400" />
-            <h4 className="text-sm font-bold text-white">Verified Altana SDK Contract Manifest (CELO_SEPOLIA)</h4>
+            <h4 className="text-sm font-bold text-white">Altana SDK Contract Manifest ({ALTANA_CELO_CONFIG.chain.name})</h4>
           </div>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
             Source: @altananetwork/sdk
@@ -313,7 +328,7 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
             <span className="text-slate-400 text-[11px]">KeyStore Registry Address</span>
             <div className="text-emerald-400 font-bold truncate">{ALTANA_CELO_CONFIG.keyStore}</div>
             <a
-              href={`https://sepolia.celoscan.io/address/${ALTANA_CELO_CONFIG.keyStore}`}
+              href={`{explorerBaseUrl}/address/${ALTANA_CELO_CONFIG.keyStore}`}
               target="_blank"
               rel="noreferrer"
               className="text-[10px] text-slate-400 hover:underline flex items-center gap-1 pt-1"
@@ -327,7 +342,7 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
             <span className="text-slate-400 text-[11px]">KeyStore Controller Address</span>
             <div className="text-emerald-400 font-bold truncate">{ALTANA_CELO_CONFIG.keyStoreController}</div>
             <a
-              href={`https://sepolia.celoscan.io/address/${ALTANA_CELO_CONFIG.keyStoreController}`}
+              href={`{explorerBaseUrl}/address/${ALTANA_CELO_CONFIG.keyStoreController}`}
               target="_blank"
               rel="noreferrer"
               className="text-[10px] text-slate-400 hover:underline flex items-center gap-1 pt-1"
@@ -339,43 +354,45 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
 
           <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
             <span className="text-slate-400 text-[11px]">ERC-8004 Agent Identity Registry</span>
-            <div className="text-indigo-400 font-bold truncate">{CELO_SEPOLIA_ERC8004_REGISTRY}</div>
-            <a
-              href={`https://sepolia.celoscan.io/address/${CELO_SEPOLIA_ERC8004_REGISTRY}`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-[10px] text-slate-400 hover:underline flex items-center gap-1 pt-1"
-            >
-              <span>View on CeloScan (ERC-721 Token)</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
+            <div className="text-indigo-400 font-bold truncate">{erc8004Registry ?? 'Not configured on this network'}</div>
+            {erc8004Registry && (
+              <a
+                href={`${explorerBaseUrl}/address/${erc8004Registry}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] text-slate-400 hover:underline flex items-center gap-1 pt-1"
+              >
+                <span>View on CeloScan (ERC-721 Token)</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            )}
           </div>
 
           <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
-            <span className="text-slate-400 text-[11px]">Altana Testnet Relay</span>
+            <span className="text-slate-400 text-[11px]">Altana SDK Relay</span>
             <div className="text-teal-400 font-bold truncate">{ALTANA_CELO_CONFIG.relayUrl}</div>
             <span className="text-[10px] text-slate-400">Gas abstraction relay for session intents</span>
           </div>
 
           <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
-            <span className="text-slate-400 text-[11px]">Verified USDC Token Contract (6 Decimals)</span>
-            <div className="text-emerald-400 font-bold truncate">{CELO_SEPOLIA_USDC_ADDRESS}</div>
+            <span className="text-slate-400 text-[11px]">Active USDC Token Contract ({activeUsdc.decimals} Decimals)</span>
+            <div className="text-emerald-400 font-bold truncate">{activeUsdc.address}</div>
             <a
-              href={`https://sepolia.celoscan.io/address/${CELO_SEPOLIA_USDC_ADDRESS}`}
+              href={`{explorerBaseUrl}/address/${activeUsdc.address}`}
               target="_blank"
               rel="noreferrer"
               className="text-[10px] text-slate-400 hover:underline flex items-center gap-1 pt-1"
             >
-              <span>View Circle USDC on CeloScan</span>
+              <span>View USDC on CeloScan</span>
               <ExternalLink className="w-3 h-3" />
             </a>
           </div>
 
           <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
             <span className="text-slate-400 text-[11px]">Verified cUSD StableToken (18 Decimals)</span>
-            <div className="text-emerald-400 font-bold truncate">{CELO_SEPOLIA_CUSD_ADDRESS}</div>
+            <div className="text-emerald-400 font-bold truncate">{activeCusdAddress}</div>
             <a
-              href={`https://sepolia.celoscan.io/address/${CELO_SEPOLIA_CUSD_ADDRESS}`}
+              href={`{explorerBaseUrl}/address/${activeCusdAddress}`}
               target="_blank"
               rel="noreferrer"
               className="text-[10px] text-slate-400 hover:underline flex items-center gap-1 pt-1"
@@ -390,7 +407,7 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
               <span className="text-emerald-300 text-[11px] font-semibold">ProcureYetiDisburser Router</span>
               <span className="text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-800 px-1.5 py-0.5 rounded">Owner Guarded</span>
             </div>
-            <div className="text-emerald-400 font-bold truncate">{PROCURE_YETI_DISBURSER_ADDRESS_CELO_SEPOLIA}</div>
+            <div className="text-emerald-400 font-bold truncate">{PROCURE_YETI_DISBURSER_ADDRESS}</div>
             <span className="text-[10px] text-slate-400">Enforces on-chain supplier whitelist & autonomous caps</span>
           </div>
         </div>
@@ -435,7 +452,7 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
                 {copiedAgent ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
               </button>
               <a
-                href={`https://sepolia.celoscan.io/address/${walletConfig.agentAddress}`}
+                href={`{explorerBaseUrl}/address/${walletConfig.agentAddress}`}
                 target="_blank"
                 rel="noreferrer"
                 className="text-slate-400 hover:text-emerald-400 transition"
@@ -474,7 +491,7 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
                 {copiedOwner ? <Check className="w-4 h-4 text-amber-400" /> : <Copy className="w-4 h-4" />}
               </button>
               <a
-                href={`https://sepolia.celoscan.io/address/${walletConfig.ownerAddress}`}
+                href={`{explorerBaseUrl}/address/${walletConfig.ownerAddress}`}
                 target="_blank"
                 rel="noreferrer"
                 className="text-slate-400 hover:text-amber-400 transition"
@@ -550,17 +567,17 @@ export const AgentWalletView: React.FC<AgentWalletViewProps> = ({
           <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <p className="font-semibold text-amber-300">
-              Live On-Chain Execution Blocked by Unresolved Attribution Compatibility
+              Live On-Chain Execution Blocked by Attribution Safety Policy
             </p>
             <p className="text-slate-300 text-[11px] leading-relaxed">
-              Altana SDK v1.1.0 relays transactions via Ithaca Porto EIP-7702 envelopes. Celo&apos;s official attribution verifier (<code>@celo/attribution-tags</code>) inspects the outermost transaction envelope calldata. Appending attribution tags to inner calldata does not survive the Porto relayer envelope. The configured tag (<code>{HACKATHON_ATTRIBUTION_TAG}</code>) is an intent marker, not on-chain proof of qualifying execution.
+              Celo&apos;s verifier now supports receipt-aware verification of Altana Orchestrator intents and ERC-4337 operations. However, Altana SDK 1.2.0 can retry tagged intent preparation using untagged calls after a preparation error. The configured tag (<code>{HACKATHON_ATTRIBUTION_TAG}</code>) is not proof of a qualifying transaction. Live execution remains blocked until attribution fallback is controlled and real execution is independently verified.
             </p>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
           <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-            <span className="font-bold text-amber-400 text-xs">Technical Architectural Incompatibility:</span>
+            <span className="font-bold text-amber-400 text-xs">Remaining Attribution Safety Blocker:</span>
             <p className="text-slate-300 text-[11px] leading-relaxed">
               {attributionReport.blockerReason}
             </p>
