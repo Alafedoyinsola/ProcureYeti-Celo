@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -14,6 +15,7 @@ import { ActivityView } from '@/components/views/ActivityView';
 import { SettingsView } from '@/components/views/SettingsView';
 import { CreateRequestModal } from '@/components/modals/CreateRequestModal';
 import { AddSupplierModal } from '@/components/modals/AddSupplierModal';
+
 import {
   PurchaseRequest,
   Supplier,
@@ -22,6 +24,7 @@ import {
   AltanaWalletConfig,
   ActivityEvent,
 } from '@/types';
+
 import {
   getStoredRequests,
   saveStoredRequests,
@@ -37,6 +40,7 @@ import {
   saveStoredActivity,
   resetToDemoDefaults,
 } from '@/lib/storage';
+
 import {
   INITIAL_PURCHASE_REQUESTS,
   INITIAL_SUPPLIERS,
@@ -49,24 +53,117 @@ import {
 import { AuditableDecisionReceipt } from '@/lib/sentinel/investigation';
 import type { Address } from 'viem';
 
+import {
+  ALTANA_CELO_CONFIG,
+  INITIAL_LIVE_WALLET_SESSION,
+  connectAltanaPasskeyWallet,
+  connectInjectedEoaWallet,
+  type LiveWalletSession,
+} from '@/lib/altana';
+
 export default function Home() {
   const [currentTab, setCurrentTab] = useState<NavTab>('overview');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
-  // Modals state
+  // Modal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAddSupplierModalOpen, setIsAddSupplierModalOpen] = useState(false);
 
-  // Core Data States with lazy initializers (eliminates synchronous setState cascading render warning)
+  // Core application data
   const [requests, setRequests] = useState<PurchaseRequest[]>(getStoredRequests);
   const [suppliers, setSuppliers] = useState<Supplier[]>(getStoredSuppliers);
   const [quotations, setQuotations] = useState<Quotation[]>(getStoredQuotations);
   const [approvals, setApprovals] = useState<ApprovalItem[]>(getStoredApprovals);
-  const [walletConfig, setWalletConfig] = useState<AltanaWalletConfig>(getStoredWalletConfig);
+  const [walletConfig, setWalletConfig] = useState<AltanaWalletConfig>(
+    getStoredWalletConfig
+  );
   const [activity, setActivity] = useState<ActivityEvent[]>(getStoredActivity);
 
-  // Synchronize state changes to localStorage
+  // Wallet connection state. Connecting a wallet does not enable payment execution.
+  const [walletSession, setWalletSession] = useState<LiveWalletSession>(
+    INITIAL_LIVE_WALLET_SESSION
+  );
+
+  // Connect an Altana Passkey wallet or an injected browser wallet.
+  const handleConnectWallet = async (
+    provider: 'altana_passkey' | 'injected_eoa'
+  ) => {
+    setWalletSession((previous) => ({
+      ...previous,
+      state: 'connecting',
+      error: null,
+    }));
+
+    try {
+      const result =
+        provider === 'altana_passkey'
+          ? await connectAltanaPasskeyWallet('create')
+          : await connectInjectedEoaWallet();
+
+      // Verify the injected wallet is using the configured Celo network.
+      if (provider === 'injected_eoa') {
+        const ethereum = (
+          window as Window & {
+            ethereum?: {
+              request: (args: { method: string }) => Promise<string>;
+            };
+          }
+        ).ethereum;
+
+        if (!ethereum) {
+          throw new Error('No injected wallet provider found.');
+        }
+
+        const chainIdHex = await ethereum.request({
+          method: 'eth_chainId',
+        });
+
+        const connectedChainId = Number(BigInt(chainIdHex));
+
+        if (connectedChainId !== ALTANA_CELO_CONFIG.chainId) {
+          throw new Error(
+            `Wrong network. Please switch your wallet to chain ID ${ALTANA_CELO_CONFIG.chainId}.`
+          );
+        }
+      }
+
+      setWalletSession({
+        mode: 'live',
+        state: 'connected',
+        providerType: result.type,
+        address: result.address,
+        ownerAddress: null,
+        error: null,
+        chainId: ALTANA_CELO_CONFIG.chainId,
+        relayUrl:
+          ALTANA_CELO_CONFIG.relayUrl || 'https://relay.altana.network',
+        isPasskeySupported:
+          typeof window !== 'undefined' &&
+          Boolean(window.PublicKeyCredential),
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Wallet connection failed.';
+
+      setWalletSession((previous) => ({
+        ...previous,
+        state: 'error',
+        error: message,
+      }));
+
+      window.alert(message);
+    }
+  };
+
+  // Disconnect the wallet from the dashboard session.
+  const handleDisconnectWallet = () => {
+    setWalletSession(INITIAL_LIVE_WALLET_SESSION);
+  };
+
+  // Persist application state to localStorage.
   useEffect(() => {
     saveStoredRequests(requests);
   }, [requests]);
@@ -91,19 +188,21 @@ export default function Home() {
     saveStoredActivity(activity);
   }, [activity]);
 
-  // Handler: Create Purchase Request
+  // Create a purchase request.
   const handleCreateRequest = (
-    newReqData: Omit<PurchaseRequest, 'id' | 'createdAt' | 'status' | 'requestedBy'>
+    newReqData: Omit<
+      PurchaseRequest,
+      'id' | 'createdAt' | 'status' | 'requestedBy'
+    >
   ) => {
     const nextNum = requests.length + 85;
     const reqId = `PR-2026-${nextNum}`;
 
-    // Determine status based on Altana policy:
-    // If < autoApprovalThreshold ($500), AI auto-reviews and qualifies for demo scheduling
-    const isUnderThreshold = newReqData.estimatedBudget < walletConfig.autoApprovalThreshold;
+    const isUnderThreshold =
+      newReqData.estimatedBudget < walletConfig.autoApprovalThreshold;
+
     const status = isUnderThreshold ? 'ai_reviewing' : 'pending_approval';
 
-    // Simulated recommendation heuristic
     const matchingSupplier = suppliers[0] || INITIAL_SUPPLIERS[0];
     const bestPrice = Math.round(newReqData.estimatedBudget * 0.94);
     const savingsPct = 6.0;
@@ -124,10 +223,8 @@ export default function Home() {
       },
     };
 
-    const updatedRequests = [newRequest, ...requests];
-    setRequests(updatedRequests);
+    setRequests((previous) => [newRequest, ...previous]);
 
-    // Also add to Approval Queue if >= $500 threshold
     if (!isUnderThreshold) {
       const newApproval: ApprovalItem = {
         id: `AP-${Math.floor(Math.random() * 800 + 200)}`,
@@ -145,10 +242,10 @@ export default function Home() {
         aiNotes: `Requisition exceeds $${walletConfig.autoApprovalThreshold} cUSD Altana agent threshold. Verified vendor on Celo Sepolia (11142220).`,
         status: 'pending',
       };
-      setApprovals([newApproval, ...approvals]);
+
+      setApprovals((previous) => [newApproval, ...previous]);
     }
 
-    // Add activity event
     const newActivity: ActivityEvent = {
       id: `ACT-${Date.now()}`,
       timestamp: 'Just now',
@@ -160,14 +257,19 @@ export default function Home() {
       currency: newReqData.currency,
       badge: 'Requisition',
     };
-    setActivity([newActivity, ...activity]);
+
+    setActivity((previous) => [newActivity, ...previous]);
   };
 
-  // Handler: Add Supplier
+  // Add a supplier.
   const handleAddSupplier = (
-    newSupData: Omit<Supplier, 'id' | 'rating' | 'verificationStatus' | 'totalPaidCUSD'>
+    newSupData: Omit<
+      Supplier,
+      'id' | 'rating' | 'verificationStatus' | 'totalPaidCUSD'
+    >
   ) => {
     const nextId = `SUP-0${suppliers.length + 1}`;
+
     const newSupplier: Supplier = {
       ...newSupData,
       id: nextId,
@@ -176,7 +278,7 @@ export default function Home() {
       totalPaidCUSD: 0,
     };
 
-    setSuppliers([...suppliers, newSupplier]);
+    setSuppliers((previous) => [...previous, newSupplier]);
 
     const newActivity: ActivityEvent = {
       id: `ACT-${Date.now()}`,
@@ -187,51 +289,51 @@ export default function Home() {
       description: `Payment address ${newSupData.walletAddress.slice(0, 8)}... added to Altana whitelist for Celo Sepolia (11142220).`,
       badge: 'Whitelist Added',
     };
-    setActivity([newActivity, ...activity]);
+
+    setActivity((previous) => [newActivity, ...previous]);
   };
 
-  // Handler: Authorize (No fake tx hashes, honest demo execution status)
+  // Record a demo authorization. This does not submit an on-chain transaction.
   const handleAuthorizeApproval = (approvalId: string) => {
-    const item = approvals.find((a) => a.id === approvalId);
+    const item = approvals.find((approval) => approval.id === approvalId);
     if (!item) return;
 
     const demoRefId = `DEMO-AUTH-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // Update approvals: status becomes awaiting_execution or demo_approved
-    setApprovals(
-      approvals.map((a) =>
-        a.id === approvalId
-          ? { ...a, status: 'awaiting_execution', demoRef: demoRefId }
-          : a
+    setApprovals((previous) =>
+      previous.map((approval) =>
+        approval.id === approvalId
+          ? { ...approval, status: 'awaiting_execution', demoRef: demoRefId }
+          : approval
       )
     );
 
-    // Update request: status becomes awaiting_execution
-    setRequests(
-      requests.map((r) =>
-        r.id === item.requestId
-          ? { ...r, status: 'awaiting_execution', demoRef: demoRefId }
-          : r
+    setRequests((previous) =>
+      previous.map((request) =>
+        request.id === item.requestId
+          ? { ...request, status: 'awaiting_execution', demoRef: demoRefId }
+          : request
       )
     );
 
-    // Update simulated daily spent in session
-    setWalletConfig((prev) => ({
-      ...prev,
-      dailySpent: prev.dailySpent + item.amount,
-      balanceCUSD: Math.max(0, prev.balanceCUSD - item.amount),
+    setWalletConfig((previous) => ({
+      ...previous,
+      dailySpent: previous.dailySpent + item.amount,
+      balanceCUSD: Math.max(0, previous.balanceCUSD - item.amount),
     }));
 
-    // Update supplier total paid (demo volume)
-    setSuppliers(
-      suppliers.map((s) =>
-        s.walletAddress.toLowerCase() === item.supplierWallet.toLowerCase()
-          ? { ...s, totalPaidCUSD: s.totalPaidCUSD + item.amount }
-          : s
+    setSuppliers((previous) =>
+      previous.map((supplier) =>
+        supplier.walletAddress.toLowerCase() ===
+        item.supplierWallet.toLowerCase()
+          ? {
+              ...supplier,
+              totalPaidCUSD: supplier.totalPaidCUSD + item.amount,
+            }
+          : supplier
       )
     );
 
-    // Add activity event (clearly stating Awaiting Live On-Chain Settlement)
     const newActivity: ActivityEvent = {
       id: `ACT-${Date.now()}`,
       timestamp: 'Just now',
@@ -244,10 +346,11 @@ export default function Home() {
       demoRef: demoRefId,
       badge: 'Awaiting On-Chain',
     };
-    setActivity([newActivity, ...activity]);
+
+    setActivity((previous) => [newActivity, ...previous]);
   };
 
-  // Handler: Commit Mandate Decision from Sentinel Modal
+  // Commit an auditable decision from the Sentinel modal.
   const handleCommitMandateDecision = (
     receipt: AuditableDecisionReceipt,
     mandateData?: {
@@ -257,12 +360,15 @@ export default function Home() {
       supplierAddress: Address;
     }
   ) => {
-    if (receipt.action === 'approve_and_generate_mandate' && mandateData) {
-      setRequests((prev) =>
-        prev.map((r) =>
-          r.id === receipt.requisitionId
+    if (
+      receipt.action === 'approve_and_generate_mandate' &&
+      mandateData
+    ) {
+      setRequests((previous) =>
+        previous.map((request) =>
+          request.id === receipt.requisitionId
             ? {
-                ...r,
+                ...request,
                 status: 'awaiting_execution',
                 mandateId: mandateData.mandateId,
                 mandateStatus: 'prepared',
@@ -270,15 +376,15 @@ export default function Home() {
                 mandateExpiry: mandateData.expiry,
                 demoRef: receipt.receiptId,
               }
-            : r
+            : request
         )
       );
 
-      setApprovals((prev) =>
-        prev.map((a) =>
-          a.requestId === receipt.requisitionId
+      setApprovals((previous) =>
+        previous.map((approval) =>
+          approval.requestId === receipt.requisitionId
             ? {
-                ...a,
+                ...approval,
                 status: 'awaiting_execution',
                 mandateId: mandateData.mandateId,
                 mandateStatus: 'prepared',
@@ -286,13 +392,13 @@ export default function Home() {
                 mandateExpiry: mandateData.expiry,
                 receiptId: receipt.receiptId,
               }
-            : a
+            : approval
         )
       );
 
-      setActivity((prev) => [
+      setActivity((previous) => [
         {
-          id: `ACT-MANDATE-${prev.length + 1}`,
+          id: `ACT-MANDATE-${previous.length + 1}`,
           timestamp: 'Just now',
           type: 'owner_approval',
           actor: 'Elena Vance (Owner)',
@@ -303,21 +409,22 @@ export default function Home() {
           demoRef: receipt.receiptId,
           badge: 'Mandate Prepared (Local)',
         },
-        ...prev,
+        ...previous,
       ]);
     } else if (receipt.action === 'reject') {
       handleRejectApproval(receipt.requisitionId);
     } else if (receipt.action === 'request_clarification') {
-      setRequests((prev) =>
-        prev.map((r) =>
-          r.id === receipt.requisitionId
-            ? { ...r, status: 'pending_approval' }
-            : r
+      setRequests((previous) =>
+        previous.map((request) =>
+          request.id === receipt.requisitionId
+            ? { ...request, status: 'pending_approval' }
+            : request
         )
       );
-      setActivity((prev) => [
+
+      setActivity((previous) => [
         {
-          id: `ACT-CLARIFY-${prev.length + 1}`,
+          id: `ACT-CLARIFY-${previous.length + 1}`,
           timestamp: 'Just now',
           type: 'policy_guardrail',
           actor: 'Elena Vance (Owner)',
@@ -325,35 +432,44 @@ export default function Home() {
           description: `Owner requested additional documentation: "${receipt.clarificationNote || 'Vendor quote and justification breakdown needed'}". No payment authority granted.`,
           badge: 'Clarification Needed',
         },
-        ...prev,
+        ...previous,
       ]);
     } else if (receipt.action === 'escalate_to_multisig') {
-      setActivity((prev) => [
+      setActivity((previous) => [
         {
-          id: `ACT-ESCALATE-${prev.length + 1}`,
+          id: `ACT-ESCALATE-${previous.length + 1}`,
           timestamp: 'Just now',
           type: 'policy_guardrail',
           actor: 'Elena Vance (Owner)',
           title: `Requisition Escalated to Multi-Sig: ${receipt.requisitionId}`,
-          description: `Escalated for senior executive sign-off due to policy threshold or contract ceiling trigger. No payment authority granted.`,
+          description:
+            'Escalated for senior executive sign-off due to policy threshold or contract ceiling trigger. No payment authority granted.',
           badge: 'Escalated',
         },
-        ...prev,
+        ...previous,
       ]);
     }
   };
 
-  // Handler: Reject Approval
+  // Reject an approval.
   const handleRejectApproval = (approvalId: string) => {
-    const item = approvals.find((a) => a.id === approvalId);
+    const item = approvals.find((approval) => approval.id === approvalId);
     if (!item) return;
 
-    setApprovals(
-      approvals.map((a) => (a.id === approvalId ? { ...a, status: 'rejected' } : a))
+    setApprovals((previous) =>
+      previous.map((approval) =>
+        approval.id === approvalId
+          ? { ...approval, status: 'rejected' }
+          : approval
+      )
     );
 
-    setRequests(
-      requests.map((r) => (r.id === item.requestId ? { ...r, status: 'rejected' } : r))
+    setRequests((previous) =>
+      previous.map((request) =>
+        request.id === item.requestId
+          ? { ...request, status: 'rejected' }
+          : request
+      )
     );
 
     const newActivity: ActivityEvent = {
@@ -362,13 +478,15 @@ export default function Home() {
       type: 'owner_approval',
       actor: 'Elena Vance (Owner)',
       title: `Requisition Declined: ${item.title}`,
-      description: `Requisition declined by owner. Smart account authorization withheld.`,
+      description:
+        'Requisition declined by owner. Smart account authorization withheld.',
       badge: 'Declined',
     };
-    setActivity([newActivity, ...activity]);
+
+    setActivity((previous) => [newActivity, ...previous]);
   };
 
-  // Handler: Reset Demo Data
+  // Reset the demo data.
   const handleResetDemoData = () => {
     if (typeof window !== 'undefined') {
       resetToDemoDefaults();
@@ -381,22 +499,24 @@ export default function Home() {
     }
   };
 
-  const pendingApprovalsCount = approvals.filter((a) => a.status === 'pending').length;
+  const pendingApprovalsCount = approvals.filter(
+    (approval) => approval.status === 'pending'
+  ).length;
+
   const activeRequestsCount = requests.filter(
-    (r) =>
-      r.status === 'pending_approval' ||
-      r.status === 'ai_reviewing' ||
-      r.status === 'draft' ||
-      r.status === 'awaiting_execution'
+    (request) =>
+      request.status === 'pending_approval' ||
+      request.status === 'ai_reviewing' ||
+      request.status === 'draft' ||
+      request.status === 'awaiting_execution'
   ).length;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950">
-      {/* Top Demo Mode Banner */}
       <DemoBanner onReset={handleResetDemoData} />
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar */}
+        {/* Desktop Sidebar */}
         <div className="hidden lg:flex shrink-0">
           <Sidebar
             currentTab={currentTab}
@@ -405,20 +525,23 @@ export default function Home() {
               setIsMobileSidebarOpen(false);
             }}
             isCollapsed={isSidebarCollapsed}
-            onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            onToggleCollapse={() =>
+              setIsSidebarCollapsed((previous) => !previous)
+            }
             walletConfig={walletConfig}
             pendingApprovalsCount={pendingApprovalsCount}
             activeRequestsCount={activeRequestsCount}
           />
         </div>
 
-        {/* Mobile Slide-over Sidebar */}
+        {/* Mobile Sidebar */}
         {isMobileSidebarOpen && (
           <div className="fixed inset-0 z-50 lg:hidden flex">
             <div
               className="fixed inset-0 bg-black/70 backdrop-blur-sm"
               onClick={() => setIsMobileSidebarOpen(false)}
             />
+
             <div className="relative z-10 w-64 bg-slate-900 h-full flex flex-col">
               <Sidebar
                 currentTab={currentTab}
@@ -436,17 +559,22 @@ export default function Home() {
           </div>
         )}
 
-        {/* Main Content Area */}
+        {/* Main Content */}
         <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
-          {/* Top Bar */}
           <TopBar
             currentTab={currentTab}
             onOpenCreateModal={() => setIsCreateModalOpen(true)}
-            onMobileMenuToggle={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+            onMobileMenuToggle={() =>
+              setIsMobileSidebarOpen((previous) => !previous)
+            }
             pendingApprovalsCount={pendingApprovalsCount}
+            walletSession={walletSession}
+            onConnectWallet={(provider) => {
+              void handleConnectWallet(provider);
+            }}
+            onDisconnectWallet={handleDisconnectWallet}
           />
 
-          {/* Tab Views */}
           <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 max-w-7xl w-full mx-auto">
             {currentTab === 'overview' && (
               <OverviewView
@@ -477,9 +605,7 @@ export default function Home() {
             {currentTab === 'quotations' && (
               <QuotationsView
                 quotations={quotations}
-                onAcceptQuote={() => {
-                  setCurrentTab('approvals');
-                }}
+                onAcceptQuote={() => setCurrentTab('approvals')}
                 onNavigateTab={(tab) => setCurrentTab(tab)}
               />
             )}
@@ -500,12 +626,17 @@ export default function Home() {
               <AgentWalletView
                 walletConfig={walletConfig}
                 onUpdatePolicy={(updated) =>
-                  setWalletConfig((prev) => ({ ...prev, ...updated }))
+                  setWalletConfig((previous) => ({
+                    ...previous,
+                    ...updated,
+                  }))
                 }
               />
             )}
 
-            {currentTab === 'activity' && <ActivityView activity={activity} />}
+            {currentTab === 'activity' && (
+              <ActivityView activity={activity} />
+            )}
 
             {currentTab === 'settings' && (
               <SettingsView
